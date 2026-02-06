@@ -3,30 +3,222 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>User Dashboard</title>
+  <title>User Dashboard - xneko</title>
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* --- CSS Variables & Reset --- */
+    :root{
+      --bg-body: #ffffff; 
+      --card-bg: #ffffff;
+      --text-main: #111827;
+      --text-muted: #6b7280;
+      --border: #e5e7eb;
+      --shadow: 0 18px 40px rgba(0,0,0,0.12);
+      --btn: #111827;
+      --btn-hover: #0b1220;
+      --gradient-btn: linear-gradient(to right, #f59e0b, #ef4444);
+    }
+
+    * { 
+      box-sizing: border-box;
+      margin: 0; 
+      padding: 0; 
+    }
+
+    body {
+      font-family: 'Raleway', sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      min-height: 100vh;
+      position: relative;
+    }
+
+    /* --- GRID BACKGROUND --- */
+    .grid-wrapper {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100vh;
+      z-index: -1;
+      pointer-events: none;
+      background-color: #ffffff;
+      overflow: hidden;
+    }
+
+    .grid-background {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      background-image: 
+          linear-gradient(to right, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+      background-size: 20px 20px;
+      -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+      mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+    }
+
+    /* --- TOP NAVBAR --- */
+    .top-nav {
+      position: fixed; top: 0; left: 0; width: 100%; height: 60px; 
+      display: flex; justify-content: space-between; align-items: center; 
+      padding: 0 20px; 
+      background: rgba(255,255,255,0.85); backdrop-filter: blur(12px); 
+      border-bottom: 1px solid rgba(0,0,0,0.08); z-index: 100;
+    }
+
+    .nav-brand {
+      font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+    }
+
+    .fb-btn {
+      display: flex; align-items: center; text-decoration: none; 
+      color: var(--text-main); padding: 5px 12px; 
+      background: rgba(0,0,0,0.05); border-radius: 30px; 
+      transition: background 0.2s; max-width: 100%; 
+    }
+    .fb-btn:hover { background: rgba(0,0,0,0.1); }
+
+    .fb-icon-svg {
+      width: 20px; height: 20px; color: #1877F2; margin-right: 8px; flex-shrink: 0;
+    }
+
+    .fb-name {
+      font-size: 14px; font-weight: 600; white-space: nowrap; 
+      overflow: hidden; text-overflow: ellipsis;
+    }
+
+    @media (max-width: 380px) {
+      .top-nav { padding: 0 10px; }
+      .nav-brand { font-size: 16px; }
+      .fb-btn { padding: 4px 10px; max-width: 150px; }
+      .fb-name { font-size: 12px; }
+      .fb-icon-svg { width: 16px; height: 16px; margin-right: 5px; }
+    }
+
+    /* --- DASHBOARD CONTENT --- */
+    .main-content {
+      padding-top: 90px; 
+      padding-bottom: 100px; 
+      padding-left: 20px; 
+      padding-right: 20px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .page-title {
+      font-size: 2.5rem; 
+      font-weight: 800; 
+      margin-bottom: 25px; 
+      color: var(--text-main);
+      text-align: center;
+    }
+
+    /* Card Styles */
+    .dashboard-card {
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+
+    .dashboard-card h3 {
+      margin-top: 0;
+      margin-bottom: 15px;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-main);
+      border-bottom: 1px solid #f3f4f6;
+      padding-bottom: 10px;
+    }
+
+    .info-text {
+      color: var(--text-muted);
+      margin: 0;
+      font-size: 15px;
+      font-weight: 500;
+    }
+    .info-text b { color: var(--text-main); }
+    .logout-link { color: #ef4444; font-weight: 700; text-decoration: none; margin-left: 5px; }
+    .logout-link:hover { text-decoration: underline; }
+
+    /* List Styles */
+    .stats-list {
+      margin-top: 10px;
+      padding-left: 20px;
+      color: var(--text-muted);
+    }
+    .stats-list li {
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .stats-list li b {
+      color: var(--text-main);
+      font-weight: 700;
+    }
+
+    /* --- BOTTOM NAVBAR --- */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; width: 100%; height: 70px;
+      background: rgba(255,255,255,0.85); backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(0,0,0,0.1);
+      display: flex; justify-content: space-around; align-items: center;
+      padding: 0 10px; z-index: 100;
+    }
+
+    .nav-item {
+      display: flex; flex-direction: column; align-items: center;
+      text-decoration: none; color: #64748b; width: 25%;
+    }
+    .nav-icon-svg { width: 24px; height: 24px; margin-bottom: 4px; }
+    .nav-text { font-size: 11px; font-weight: 600; } 
+
+    /* Mobile Text Size Adjustments */
+    @media (max-width: 420px){
+      .page-title { font-size: 2rem; }
+    }
+
+  </style>
 </head>
-<body style="margin:0; padding:0; box-sizing:border-box; font-family:'Raleway', sans-serif; background:#ffffff; color:#1e293b; min-height:100vh;">
-  <div style="position:fixed; top:0; left:0; width:100%; height:60px; display:flex; justify-content:space-between; align-items:center; padding:0 30px; background:rgba(255,255,255,0.9); backdrop-filter:blur(12px); border-bottom:1px solid rgba(0,0,0,0.08); box-shadow:0 4px 6px -1px rgba(0,0,0,0.03); z-index:100;">
-    <div style="font-size:18px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:1px;">Earning</div>
-    <a href="https://www.facebook.com/YOUR_LINK_HERE" target="_blank" style="display:flex; align-items:center; text-decoration:none; color:#0f172a; padding:6px 14px; background:rgba(0,0,0,0.04); border-radius:30px;">
-      <svg style="width:20px; height:20px; color:#1877F2; margin-right:10px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+
+<body>
+
+  <div class="grid-wrapper">
+      <div class="grid-background"></div>
+  </div>
+
+  <div class="top-nav">
+    <div class="nav-brand">xneko</div>
+    <a href="https://www.facebook.com/theeliteman" target="_blank" class="fb-btn">
+      <svg class="fb-icon-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
         <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
       </svg>
-      <span style="font-size:14px; font-weight:700; white-space:nowrap;">Mahfuz Ahmed</span>
+      <span class="fb-name">Mahfuz Ahmed</span>
     </a>
   </div>
 
-  <main style="padding-top:110px; max-width:900px; margin:0 auto; padding-left:20px; padding-right:20px; padding-bottom:100px;">
-    <h1 style="font-size:2.5rem; font-weight:800; margin-bottom:20px; color:#0f172a;">User Dashboard</h1>
-    <div style="width:100%; background:#fff; border:1px solid #e2e8f0; padding:20px; margin-bottom:16px;">
-      <p style="color:#64748b; margin:0;">Logged in as: <b>{{ user.username }}</b> | <a href="/logout">Logout</a></p>
+  <main class="main-content">
+    <h1 class="page-title">User Dashboard</h1>
+    
+    <div class="dashboard-card">
+      <p class="info-text">
+        Logged in as: <b>{{ user.username }}</b> | <a href="/logout" class="logout-link">Logout</a>
+      </p>
     </div>
-    <div style="width:100%; background:#fff; border:1px solid #e2e8f0; padding:20px; margin-bottom:16px;">
+
+    <div class="dashboard-card">
       <h3>Task Summary</h3>
-      <ul style="margin-top:10px; padding-left:18px;">
+      <ul class="stats-list">
         <li>Total Submitted: <b>{{ stats.total }}</b></li>
         <li>Successful (Confirmed): <b>{{ stats.confirmed }}</b></li>
         <li>Rejected (Declined): <b>{{ stats.declined }}</b></li>
@@ -34,34 +226,39 @@
         <li>Pending: <b>{{ stats.pending }}</b></li>
       </ul>
     </div>
-    <div style="width:100%; background:#fff; border:1px solid #e2e8f0; padding:20px;">
+
+    <div class="dashboard-card">
       <h3>Balances</h3>
-      <ul style="margin-top:10px; padding-left:18px;">
+      <ul class="stats-list">
         <li>Available: <b>{{ balances.available_balance }}</b></li>
         <li>Hold: <b>{{ balances.hold_balance }}</b></li>
         <li>Reserved Withdraw: <b>{{ balances.reserved_withdraw_balance }}</b></li>
-        <li>Total Earned: {{ balances.total_earned }}</li>
-        <li>Total Withdrawn: {{ balances.total_withdrawn }}</li>
+        <li>Total Earned: <b>{{ balances.total_earned }}</b></li>
+        <li>Total Withdrawn: <b>{{ balances.total_withdrawn }}</b></li>
       </ul>
     </div>
   </main>
-  <nav style="position:fixed; bottom:0; left:0; width:100%; height:70px; background:rgba(255,255,255,0.98); backdrop-filter:blur(10px); border-top:1px solid rgba(0,0,0,0.1); display:flex; justify-content:space-around; align-items:center; padding:0 10px;">
-    <a href="/" style="display:flex; flex-direction:column; align-items:center; text-decoration:none; color:#64748b; width:25%;">
-      <svg style="width:24px; height:24px; margin-bottom:4px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>
-      <span style="font-size:11px; font-weight:600;">Home</span>
+
+  <nav class="bottom-nav">
+    <a href="/" class="nav-item">
+      <svg class="nav-icon-svg" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>
+      <span class="nav-text">Home</span>
     </a>
-    <a href="/user/gmail" style="display:flex; flex-direction:column; align-items:center; text-decoration:none; color:#64748b; width:25%;">
-      <svg style="width:24px; height:24px; margin-bottom:4px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#4caf50" d="M45,16.2l-5,2.75l-5,4.75L35,40h7c1.657,0,3-1.343,3-3V16.2z"></path><path fill="#1e88e5" d="M3,16.2l3.614,1.71L13,23.7V40H6c-1.657,0-3-1.343-3-3V16.2z"></path><polygon fill="#e53935" points="35,11.2 24,19.45 13,11.2 12,17 13,23.7 24,31.95 35,23.7 36,17"></polygon><path fill="#c62828" d="M3,12.298V16.2l10,7.5V11.2L9.876,8.859C9.132,8.301,8.228,8,7.298,8h0C4.924,8,3,9.924,3,12.298z"></path><path fill="#fbc02d" d="M45,12.298V16.2l-10,7.5V11.2l3.124-2.341C38.868,8.301,39.772,8,40.702,8h0 C43.076,8,45,9.924,45,12.298z"></path></svg>
-      <span style="font-size:11px; font-weight:600;">Submit</span>
+    <a href="/user/gmail" class="nav-item">
+      <svg class="nav-icon-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#4caf50" d="M45,16.2l-5,2.75l-5,4.75L35,40h7c1.657,0,3-1.343,3-3V16.2z"></path><path fill="#1e88e5" d="M3,16.2l3.614,1.71L13,23.7V40H6c-1.657,0-3-1.343-3-3V16.2z"></path><polygon fill="#e53935" points="35,11.2 24,19.45 13,11.2 12,17 13,23.7 24,31.95 35,23.7 36,17"></polygon><path fill="#c62828" d="M3,12.298V16.2l10,7.5V11.2L9.876,8.859C9.132,8.301,8.228,8,7.298,8h0C4.924,8,3,9.924,3,12.298z"></path><path fill="#fbc02d" d="M45,12.298V16.2l-10,7.5V11.2l3.124-2.341C38.868,8.301,39.772,8,40.702,8h0 C43.076,8,45,9.924,45,12.298z"></path></svg>
+      <span class="nav-text">Submit</span>
     </a>
-    <a href="/user/tasks" style="display:flex; flex-direction:column; align-items:center; text-decoration:none; color:#64748b; width:25%;">
-      <svg style="width:24px; height:24px; margin-bottom:4px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 1.414 1.146 2.56 2.56 2.56 1.415 0 2.56-1.146 2.56-2.56a2.573 2.573 0 00-.1-.664m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" /></svg>
-      <span style="font-size:11px; font-weight:600;">Tasks</span>
+    <a href="/user/tasks" class="nav-item">
+      <svg class="nav-icon-svg" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 1.414 1.146 2.56 2.56 2.56 1.415 0 2.56-1.146 2.56-2.56a2.573 2.573 0 00-.1-.664m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+      </svg>
+      <span class="nav-text">Tasks</span>
     </a>
-    <a href="/user/withdraw" style="display:flex; flex-direction:column; align-items:center; text-decoration:none; color:#64748b; width:25%;">
-      <svg style="width:24px; height:24px; margin-bottom:4px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" /></svg>
-      <span style="font-size:11px; font-weight:600;">Withdraw</span>
+    <a href="/user/withdraw" class="nav-item">
+      <svg class="nav-icon-svg" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" /></svg>
+      <span class="nav-text">Withdraw</span>
     </a>
   </nav>
+
 </body>
 </html>
