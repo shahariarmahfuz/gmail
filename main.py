@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import uuid
 import hashlib
 import hmac
@@ -11,38 +10,31 @@ from typing import Optional, Dict, Any, List, Tuple
 from urllib.parse import urlparse, parse_qs
 
 import numpy as np
-import cv2
 import httpx
+from libsql_client import create_client_sync
 from fastapi import FastAPI, HTTPException, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-APP_TITLE = "Task Proxy + Wallet"
-APP_VERSION = "2.2.0"
+from config import (
+    APP_TITLE,
+    APP_VERSION,
+    UPSTREAM_BASE_URL,
+    UPSTREAM_TOKEN,
+    UPSTREAM_JOB_ID,
+    CREDIT_PER_CONFIRMED,
+    DB_URL,
+    DB_TOKEN,
+    HOST,
+    PORT,
+    RELOAD,
+    APP_SECRET,
+    SESSION_COOKIE,
+    RECOVERY_DOMAIN,
+)
 
-# =========================
-# Config
-# =========================
-UPSTREAM_BASE_URL = os.getenv("UPSTREAM_BASE_URL", "https://xgodo.com").rstrip("/")
-UPSTREAM_TOKEN = os.getenv("UPSTREAM_TOKEN", "").strip()
-UPSTREAM_JOB_ID = os.getenv("UPSTREAM_JOB_ID", "").strip()
-
-CREDIT_PER_CONFIRMED = int(os.getenv("CREDIT_PER_CONFIRMED", "10"))
-DB_PATH = os.getenv("DB_PATH", "./data.sqlite3")
-
-HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", "8000"))
-RELOAD = os.getenv("RELOAD", "false").strip().lower() in ("1", "true", "yes", "y")
-
-APP_SECRET = os.getenv("APP_SECRET", "").strip() or "CHANGE_ME_IN_PRODUCTION"
-SESSION_COOKIE = "session_id"
-
-SQLITE_TIMEOUT_SECONDS = float(os.getenv("SQLITE_TIMEOUT_SECONDS", "30"))
-SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "8000"))
-
-# Recovery email "theme"
-RECOVERY_DOMAIN = os.getenv("RECOVERY_DOMAIN", "xneko.xyz").strip().lstrip("@") or "xneko.xyz"
+UPSTREAM_BASE_URL = UPSTREAM_BASE_URL.rstrip("/")
 
 app = FastAPI(title=APP_TITLE, version=APP_VERSION)
 
@@ -55,39 +47,58 @@ templates = Jinja2Templates(directory="templates")
 # =========================
 # DB / Connection
 # =========================
-def db_connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(
-        DB_PATH,
-        timeout=SQLITE_TIMEOUT_SECONDS,
-        check_same_thread=False,
-        isolation_level=None,  # manual tx
-    )
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS};")
-    conn.execute("PRAGMA foreign_keys=ON;")
-    return conn
+db_client = create_client_sync(DB_URL, auth_token=DB_TOKEN)
 
 
-def _table_has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
-    rows = conn.execute(f"PRAGMA table_info({table});").fetchall()
-    cols = {r["name"] for r in rows}
+def _rows_to_dicts(result) -> List[Dict[str, Any]]:
+    if not result or not result.rows:
+        return []
+    columns = []
+    if result.columns:
+        columns = [c.name if hasattr(c, "name") else c for c in result.columns]
+    if not columns:
+        return [dict(enumerate(row)) for row in result.rows]
+    return [dict(zip(columns, row)) for row in result.rows]
+
+
+def db_fetchone(sql: str, args: Tuple[Any, ...] = ()) -> Optional[Dict[str, Any]]:
+    result = db_client.execute(sql, args)
+    rows = _rows_to_dicts(result)
+    return rows[0] if rows else None
+
+
+def db_fetchall(sql: str, args: Tuple[Any, ...] = ()) -> List[Dict[str, Any]]:
+    result = db_client.execute(sql, args)
+    return _rows_to_dicts(result)
+
+
+def db_execute(sql: str, args: Tuple[Any, ...] = ()) -> None:
+    db_client.execute(sql, args)
+
+
+def db_fetchone_client(client, sql: str, args: Tuple[Any, ...] = ()) -> Optional[Dict[str, Any]]:
+    result = client.execute(sql, args)
+    rows = _rows_to_dicts(result)
+    return rows[0] if rows else None
+
+
+def _table_has_column(table: str, column: str) -> bool:
+    rows = db_fetchall(f"PRAGMA table_info({table});")
+    cols = {r.get("name") for r in rows}
     return column in cols
 
 
 def with_write_tx(fn):
     attempts = 5
     for i in range(attempts):
-        conn = db_connect()
         try:
-            conn.execute("BEGIN IMMEDIATE;")
-            result = fn(conn)
-            conn.execute("COMMIT;")
+            db_execute("BEGIN;")
+            result = fn(db_client)
+            db_execute("COMMIT;")
             return result
-        except sqlite3.OperationalError as e:
+        except Exception as e:
             try:
-                conn.execute("ROLLBACK;")
+                db_execute("ROLLBACK;")
             except Exception:
                 pass
             msg = str(e).lower()
@@ -96,160 +107,154 @@ def with_write_tx(fn):
                     time.sleep(0.15 * (i + 1))
                     continue
             raise
-        finally:
-            conn.close()
 
 
 def db_init() -> None:
-    conn = db_connect()
-    try:
-        # Users
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                user_id TEXT PRIMARY KEY,
-                username TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
+    # Users
+    db_execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
 
-        # Admins
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS admins (
-                admin_id TEXT PRIMARY KEY,
-                username TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
+    # Admins
+    db_execute(
+        """
+        CREATE TABLE IF NOT EXISTS admins (
+            admin_id TEXT PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
 
-        # Sessions
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS sessions (
-                session_id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL,          -- 'user' | 'admin'
-                principal_id TEXT NOT NULL,  -- user_id/admin_id
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS ix_sessions_kind ON sessions(kind);")
-        conn.execute("CREATE INDEX IF NOT EXISTS ix_sessions_principal ON sessions(principal_id);")
+    # Sessions
+    db_execute(
+        """
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,          -- 'user' | 'admin'
+            principal_id TEXT NOT NULL,  -- user_id/admin_id
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+    db_execute("CREATE INDEX IF NOT EXISTS ix_sessions_kind ON sessions(kind);")
+    db_execute("CREATE INDEX IF NOT EXISTS ix_sessions_principal ON sessions(principal_id);")
 
-        # user_tasks
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                job_id TEXT NOT NULL,
-                job_task_id TEXT NOT NULL,
-                status_raw TEXT,
-                status_norm TEXT,
-                is_final INTEGER DEFAULT 0,
-                last_sync_at DATETIME,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        if not _table_has_column(conn, "user_tasks", "is_final"):
-            conn.execute("ALTER TABLE user_tasks ADD COLUMN is_final INTEGER DEFAULT 0;")
-        if not _table_has_column(conn, "user_tasks", "status_raw"):
-            conn.execute("ALTER TABLE user_tasks ADD COLUMN status_raw TEXT;")
-        if not _table_has_column(conn, "user_tasks", "status_norm"):
-            conn.execute("ALTER TABLE user_tasks ADD COLUMN status_norm TEXT;")
-        if not _table_has_column(conn, "user_tasks", "last_sync_at"):
-            conn.execute("ALTER TABLE user_tasks ADD COLUMN last_sync_at DATETIME;")
+    # user_tasks
+    db_execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            job_id TEXT NOT NULL,
+            job_task_id TEXT NOT NULL,
+            status_raw TEXT,
+            status_norm TEXT,
+            is_final INTEGER DEFAULT 0,
+            last_sync_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+    if not _table_has_column("user_tasks", "is_final"):
+        db_execute("ALTER TABLE user_tasks ADD COLUMN is_final INTEGER DEFAULT 0;")
+    if not _table_has_column("user_tasks", "status_raw"):
+        db_execute("ALTER TABLE user_tasks ADD COLUMN status_raw TEXT;")
+    if not _table_has_column("user_tasks", "status_norm"):
+        db_execute("ALTER TABLE user_tasks ADD COLUMN status_norm TEXT;")
+    if not _table_has_column("user_tasks", "last_sync_at"):
+        db_execute("ALTER TABLE user_tasks ADD COLUMN last_sync_at DATETIME;")
 
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_jobtask ON user_tasks(user_id, job_task_id);")
-        conn.execute("CREATE INDEX IF NOT EXISTS ix_user_tasks_userid ON user_tasks(user_id);")
-        conn.execute("CREATE INDEX IF NOT EXISTS ix_user_tasks_final ON user_tasks(is_final);")
+    db_execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_jobtask ON user_tasks(user_id, job_task_id);")
+    db_execute("CREATE INDEX IF NOT EXISTS ix_user_tasks_userid ON user_tasks(user_id);")
+    db_execute("CREATE INDEX IF NOT EXISTS ix_user_tasks_final ON user_tasks(is_final);")
 
-        # Draft table for "gmail + password + recovery + secret"
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_drafts (
-                user_id TEXT PRIMARY KEY,
-                gmail TEXT,
-                gen_password TEXT,
-                recovery_email TEXT,
-                secret TEXT,
-                otp_digits INTEGER DEFAULT 6,
-                otp_period INTEGER DEFAULT 30,
-                qr_raw TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        if not _table_has_column(conn, "user_drafts", "otp_digits"):
-            conn.execute("ALTER TABLE user_drafts ADD COLUMN otp_digits INTEGER DEFAULT 6;")
-        if not _table_has_column(conn, "user_drafts", "otp_period"):
-            conn.execute("ALTER TABLE user_drafts ADD COLUMN otp_period INTEGER DEFAULT 30;")
-        if not _table_has_column(conn, "user_drafts", "qr_raw"):
-            conn.execute("ALTER TABLE user_drafts ADD COLUMN qr_raw TEXT;")
+    # Draft table for "gmail + password + recovery + secret"
+    db_execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_drafts (
+            user_id TEXT PRIMARY KEY,
+            gmail TEXT,
+            gen_password TEXT,
+            recovery_email TEXT,
+            secret TEXT,
+            otp_digits INTEGER DEFAULT 6,
+            otp_period INTEGER DEFAULT 30,
+            qr_raw TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+    if not _table_has_column("user_drafts", "otp_digits"):
+        db_execute("ALTER TABLE user_drafts ADD COLUMN otp_digits INTEGER DEFAULT 6;")
+    if not _table_has_column("user_drafts", "otp_period"):
+        db_execute("ALTER TABLE user_drafts ADD COLUMN otp_period INTEGER DEFAULT 30;")
+    if not _table_has_column("user_drafts", "qr_raw"):
+        db_execute("ALTER TABLE user_drafts ADD COLUMN qr_raw TEXT;")
 
-        # Ledger
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_ledger (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                kind TEXT NOT NULL,          -- 'earn' | 'admin_credit' | 'withdraw'
-                amount INTEGER NOT NULL,     -- positive integer
-                ref TEXT,
-                meta TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS ix_ledger_user ON user_ledger(user_id);")
-        conn.execute("CREATE INDEX IF NOT EXISTS ix_ledger_kind ON user_ledger(kind);")
-        conn.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS ux_ledger_ref_once
-            ON user_ledger(user_id, kind, ref)
-            WHERE ref IS NOT NULL;
-            """
-        )
+    # Ledger
+    db_execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            kind TEXT NOT NULL,          -- 'earn' | 'admin_credit' | 'withdraw'
+            amount INTEGER NOT NULL,     -- positive integer
+            ref TEXT,
+            meta TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+    db_execute("CREATE INDEX IF NOT EXISTS ix_ledger_user ON user_ledger(user_id);")
+    db_execute("CREATE INDEX IF NOT EXISTS ix_ledger_kind ON user_ledger(kind);")
+    db_execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_ledger_ref_once
+        ON user_ledger(user_id, kind, ref)
+        WHERE ref IS NOT NULL;
+        """
+    )
 
-        # Withdrawals
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS withdrawals (
-                withdrawal_id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                amount INTEGER NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',   -- pending | paid | rejected
-                method TEXT NOT NULL,
-                number TEXT NOT NULL,
-                meta TEXT,
-                admin_txid TEXT,
-                admin_note TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME,
-                paid_at DATETIME
-            );
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS ix_withdrawals_user ON withdrawals(user_id);")
-        conn.execute("CREATE INDEX IF NOT EXISTS ix_withdrawals_status ON withdrawals(status);")
+    # Withdrawals
+    db_execute(
+        """
+        CREATE TABLE IF NOT EXISTS withdrawals (
+            withdrawal_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',   -- pending | paid | rejected
+            method TEXT NOT NULL,
+            number TEXT NOT NULL,
+            meta TEXT,
+            admin_txid TEXT,
+            admin_note TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME,
+            paid_at DATETIME
+        );
+        """
+    )
+    db_execute("CREATE INDEX IF NOT EXISTS ix_withdrawals_user ON withdrawals(user_id);")
+    db_execute("CREATE INDEX IF NOT EXISTS ix_withdrawals_status ON withdrawals(status);")
 
-        # Default admin (dev/test): admin/admin
-        row = conn.execute("SELECT COUNT(*) AS c FROM admins;").fetchone()
-        if int(row["c"]) == 0:
-            admin_id = str(uuid.uuid4())
-            conn.execute(
-                "INSERT INTO admins(admin_id, username, password_hash) VALUES (?, ?, ?);",
-                (admin_id, "admin", hash_password("admin")),
-            )
-    finally:
-        conn.close()
+    # Default admin (dev/test): admin/admin
+    row = db_fetchone("SELECT COUNT(*) AS c FROM admins;")
+    if row and int(row["c"]) == 0:
+        admin_id = str(uuid.uuid4())
+        db_execute(
+            "INSERT INTO admins(admin_id, username, password_hash) VALUES (?, ?, ?);",
+            (admin_id, "admin", hash_password("admin")),
+        )
 
 
 @app.on_event("startup")
@@ -274,8 +279,8 @@ def verify_password(password: str, password_hash: str) -> bool:
 def create_session(kind: str, principal_id: str) -> str:
     session_id = str(uuid.uuid4())
 
-    def _tx(conn: sqlite3.Connection):
-        conn.execute(
+    def _tx(client):
+        client.execute(
             "INSERT INTO sessions(session_id, kind, principal_id) VALUES (?, ?, ?);",
             (session_id, kind, principal_id),
         )
@@ -285,8 +290,8 @@ def create_session(kind: str, principal_id: str) -> str:
 
 
 def delete_session(session_id: str) -> None:
-    def _tx(conn: sqlite3.Connection):
-        conn.execute("DELETE FROM sessions WHERE session_id=?;", (session_id,))
+    def _tx(client):
+        client.execute("DELETE FROM sessions WHERE session_id=?;", (session_id,))
 
     with_write_tx(_tx)
 
@@ -294,43 +299,31 @@ def delete_session(session_id: str) -> None:
 def get_session(session_id: Optional[str]) -> Optional[Dict[str, str]]:
     if not session_id:
         return None
-    conn = db_connect()
-    try:
-        row = conn.execute(
-            "SELECT session_id, kind, principal_id FROM sessions WHERE session_id=?;",
-            (session_id,),
-        ).fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+    return db_fetchone(
+        "SELECT session_id, kind, principal_id FROM sessions WHERE session_id=?;",
+        (session_id,),
+    )
 
 
 def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
-    conn = db_connect()
-    try:
-        row = conn.execute(
-            "SELECT user_id, username, password_hash FROM users WHERE username=?;",
-            (username,),
-        ).fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+    return db_fetchone(
+        "SELECT user_id, username, password_hash FROM users WHERE username=?;",
+        (username,),
+    )
 
 
 def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
-    conn = db_connect()
-    try:
-        row = conn.execute("SELECT user_id, username FROM users WHERE user_id=?;", (user_id,)).fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+    return db_fetchone(
+        "SELECT user_id, username FROM users WHERE user_id=?;",
+        (user_id,),
+    )
 
 
 def create_user(username: str, password: str) -> Dict[str, Any]:
     user_id = str(uuid.uuid4())
 
-    def _tx(conn: sqlite3.Connection):
-        conn.execute(
+    def _tx(client):
+        client.execute(
             "INSERT INTO users(user_id, username, password_hash) VALUES (?, ?, ?);",
             (user_id, username, hash_password(password)),
         )
@@ -340,24 +333,17 @@ def create_user(username: str, password: str) -> Dict[str, Any]:
 
 
 def get_admin_by_username(username: str) -> Optional[Dict[str, Any]]:
-    conn = db_connect()
-    try:
-        row = conn.execute(
-            "SELECT admin_id, username, password_hash FROM admins WHERE username=?;",
-            (username,),
-        ).fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+    return db_fetchone(
+        "SELECT admin_id, username, password_hash FROM admins WHERE username=?;",
+        (username,),
+    )
 
 
 def get_admin_by_id(admin_id: str) -> Optional[Dict[str, Any]]:
-    conn = db_connect()
-    try:
-        row = conn.execute("SELECT admin_id, username FROM admins WHERE admin_id=?;", (admin_id,)).fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+    return db_fetchone(
+        "SELECT admin_id, username FROM admins WHERE admin_id=?;",
+        (admin_id,),
+    )
 
 
 def require_user(request: Request) -> Dict[str, Any]:
@@ -457,8 +443,8 @@ async def call_upstream_details(task_id: str) -> Dict[str, Any]:
 
 
 def upsert_user_task(user_id: str, job_id: str, job_task_id: str) -> None:
-    def _tx(conn: sqlite3.Connection):
-        conn.execute(
+    def _tx(client):
+        client.execute(
             "INSERT OR IGNORE INTO user_tasks(user_id, job_id, job_task_id) VALUES (?, ?, ?);",
             (user_id, job_id, job_task_id),
         )
@@ -467,14 +453,14 @@ def upsert_user_task(user_id: str, job_id: str, job_task_id: str) -> None:
 
 
 def update_task_status(
-    conn: sqlite3.Connection,
+    client,
     user_id: str,
     job_task_id: str,
     status_raw: Optional[str],
     status_norm: str,
     final: bool,
 ) -> None:
-    conn.execute(
+    client.execute(
         """
         UPDATE user_tasks
         SET status_raw=?, status_norm=?, is_final=?, last_sync_at=CURRENT_TIMESTAMP
@@ -485,99 +471,96 @@ def update_task_status(
 
 
 def get_tasks_for_user(user_id: str) -> List[Dict[str, Any]]:
-    conn = db_connect()
-    try:
-        rows = conn.execute(
-            """
-            SELECT job_task_id, status_norm, is_final, last_sync_at, created_at
-            FROM user_tasks
-            WHERE user_id=?
-            ORDER BY created_at DESC, id DESC;
-            """,
-            (user_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    return db_fetchall(
+        """
+        SELECT job_task_id, status_norm, is_final, last_sync_at, created_at
+        FROM user_tasks
+        WHERE user_id=?
+        ORDER BY created_at DESC, id DESC;
+        """,
+        (user_id,),
+    )
 
 
 def get_non_final_task_ids(user_id: str) -> List[str]:
-    conn = db_connect()
-    try:
-        rows = conn.execute(
-            """
-            SELECT job_task_id
-            FROM user_tasks
-            WHERE user_id=? AND (is_final IS NULL OR is_final=0);
-            """,
-            (user_id,),
-        ).fetchall()
-        return [str(r["job_task_id"]) for r in rows]
-    finally:
-        conn.close()
+    rows = db_fetchall(
+        """
+        SELECT job_task_id
+        FROM user_tasks
+        WHERE user_id=? AND (is_final IS NULL OR is_final=0);
+        """,
+        (user_id,),
+    )
+    return [str(r["job_task_id"]) for r in rows]
 
 
 def task_stats(user_id: str) -> Dict[str, int]:
-    conn = db_connect()
-    try:
-        total = conn.execute(
-            "SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks WHERE user_id=?;",
-            (user_id,),
-        ).fetchone()["c"]
+    total = db_fetchone(
+        "SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks WHERE user_id=?;",
+        (user_id,),
+    )["c"]
 
-        confirmed = conn.execute(
-            "SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks WHERE user_id=? AND status_norm='confirmed';",
-            (user_id,),
-        ).fetchone()["c"]
+    confirmed = db_fetchone(
+        "SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks WHERE user_id=? AND status_norm='confirmed';",
+        (user_id,),
+    )["c"]
 
-        declined = conn.execute(
-            "SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks WHERE user_id=? AND status_norm='declined';",
-            (user_id,),
-        ).fetchone()["c"]
+    declined = db_fetchone(
+        "SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks WHERE user_id=? AND status_norm='declined';",
+        (user_id,),
+    )["c"]
 
-        processing = conn.execute(
-            "SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks WHERE user_id=? AND status_norm='processing';",
-            (user_id,),
-        ).fetchone()["c"]
+    processing = db_fetchone(
+        "SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks WHERE user_id=? AND status_norm='processing';",
+        (user_id,),
+    )["c"]
 
-        pending = conn.execute(
-            "SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks WHERE user_id=? AND status_norm='pending';",
-            (user_id,),
-        ).fetchone()["c"]
+    pending = db_fetchone(
+        "SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks WHERE user_id=? AND status_norm='pending';",
+        (user_id,),
+    )["c"]
 
-        return {
-            "total": int(total),
-            "confirmed": int(confirmed),
-            "declined": int(declined),
-            "processing": int(processing),
-            "pending": int(pending),
-        }
-    finally:
-        conn.close()
+    return {
+        "total": int(total),
+        "confirmed": int(confirmed),
+        "declined": int(declined),
+        "processing": int(processing),
+        "pending": int(pending),
+    }
+
+
+def admin_overview_stats() -> Dict[str, int]:
+    total_users = db_fetchone("SELECT COALESCE(COUNT(*),0) AS c FROM users;")["c"]
+    total_tasks = db_fetchone("SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks;")["c"]
+    total_withdrawals = db_fetchone("SELECT COALESCE(COUNT(*),0) AS c FROM withdrawals;")["c"]
+    pending_withdrawals = db_fetchone(
+        "SELECT COALESCE(COUNT(*),0) AS c FROM withdrawals WHERE status='pending';"
+    )["c"]
+    return {
+        "total_users": int(total_users),
+        "total_tasks": int(total_tasks),
+        "total_withdrawals": int(total_withdrawals),
+        "pending_withdrawals": int(pending_withdrawals),
+    }
 
 
 # =========================
 # Draft helpers (gmail/password/recovery/secret)
 # =========================
 def get_draft(user_id: str) -> Optional[Dict[str, Any]]:
-    conn = db_connect()
-    try:
-        row = conn.execute(
-            """
-            SELECT user_id, gmail, gen_password, recovery_email, secret, otp_digits, otp_period, qr_raw, created_at, updated_at
-            FROM user_drafts
-            WHERE user_id=?;
-            """,
-            (user_id,),
-        ).fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+    return db_fetchone(
+        """
+        SELECT user_id, gmail, gen_password, recovery_email, secret, otp_digits, otp_period, qr_raw, created_at, updated_at
+        FROM user_drafts
+        WHERE user_id=?;
+        """,
+        (user_id,),
+    )
 
 
 def clear_draft(user_id: str) -> None:
-    def _tx(conn: sqlite3.Connection):
-        conn.execute("DELETE FROM user_drafts WHERE user_id=?;", (user_id,))
+    def _tx(client):
+        client.execute("DELETE FROM user_drafts WHERE user_id=?;", (user_id,))
 
     with_write_tx(_tx)
 
@@ -612,8 +595,8 @@ def start_or_reset_draft(user_id: str, gmail: str) -> Dict[str, Any]:
     gen_password = generate_pretty_password()
     recovery_email = generate_recovery_email()
 
-    def _tx(conn: sqlite3.Connection):
-        conn.execute(
+    def _tx(client):
+        client.execute(
             """
             INSERT INTO user_drafts(user_id, gmail, gen_password, recovery_email, secret, otp_digits, otp_period, qr_raw, updated_at)
             VALUES (?, ?, ?, ?, NULL, 6, 30, NULL, CURRENT_TIMESTAMP)
@@ -635,8 +618,8 @@ def start_or_reset_draft(user_id: str, gmail: str) -> Dict[str, Any]:
 
 
 def save_secret_to_draft(user_id: str, secret: str, otp_digits: int, otp_period: int, qr_raw: str) -> None:
-    def _tx(conn: sqlite3.Connection):
-        conn.execute(
+    def _tx(client):
+        client.execute(
             """
             UPDATE user_drafts
             SET secret=?, otp_digits=?, otp_period=?, qr_raw=?, updated_at=CURRENT_TIMESTAMP
@@ -661,6 +644,7 @@ def _clean_base32(s: str) -> str:
 
 
 def decode_qr_payload_from_image(image_bytes: bytes) -> str:
+    import cv2
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
@@ -781,73 +765,67 @@ def format_job_proof(draft: Dict[str, Any]) -> str:
 # =========================
 # Wallet / Ledger / Withdrawals
 # =========================
-def ledger_sum(conn: sqlite3.Connection, user_id: str, kind: str) -> int:
-    row = conn.execute(
+def ledger_sum(client, user_id: str, kind: str) -> int:
+    row = db_fetchone_client(
+        client,
         "SELECT COALESCE(SUM(amount), 0) AS total FROM user_ledger WHERE user_id=? AND kind=?;",
         (user_id, kind),
-    ).fetchone()
+    )
     return int(row["total"] if row else 0)
 
 
-def reserved_withdraw_sum(conn: sqlite3.Connection, user_id: str) -> int:
-    row = conn.execute(
+def reserved_withdraw_sum(client, user_id: str) -> int:
+    row = db_fetchone_client(
+        client,
         "SELECT COALESCE(SUM(amount), 0) AS total FROM withdrawals WHERE user_id=? AND status='pending';",
         (user_id,),
-    ).fetchone()
+    )
     return int(row["total"] if row else 0)
 
 
 def hold_balance(user_id: str) -> int:
-    conn = db_connect()
-    try:
-        row = conn.execute(
-            """
-            SELECT COALESCE(COUNT(*), 0) AS c
-            FROM user_tasks
-            WHERE user_id=?
-              AND (is_final IS NULL OR is_final=0)
-              AND status_norm IN ('pending','processing');
-            """,
-            (user_id,),
-        ).fetchone()
-        return int(row["c"]) * CREDIT_PER_CONFIRMED
-    finally:
-        conn.close()
+    row = db_fetchone(
+        """
+        SELECT COALESCE(COUNT(*), 0) AS c
+        FROM user_tasks
+        WHERE user_id=?
+          AND (is_final IS NULL OR is_final=0)
+          AND status_norm IN ('pending','processing');
+        """,
+        (user_id,),
+    )
+    return int(row["c"]) * CREDIT_PER_CONFIRMED
 
 
 def balances(user_id: str) -> Dict[str, int]:
-    conn = db_connect()
-    try:
-        earned = ledger_sum(conn, user_id, "earn") + ledger_sum(conn, user_id, "admin_credit")
-        withdrawn = ledger_sum(conn, user_id, "withdraw")
-        reserved = reserved_withdraw_sum(conn, user_id)
-        available = earned - withdrawn - reserved
-        if available < 0:
-            available = 0
-        return {
-            "available_balance": int(available),
-            "hold_balance": hold_balance(user_id),
-            "total_earned": int(earned),
-            "total_withdrawn": int(withdrawn),
-            "reserved_withdraw_balance": int(reserved),
-        }
-    finally:
-        conn.close()
+    earned = ledger_sum(db_client, user_id, "earn") + ledger_sum(db_client, user_id, "admin_credit")
+    withdrawn = ledger_sum(db_client, user_id, "withdraw")
+    reserved = reserved_withdraw_sum(db_client, user_id)
+    available = earned - withdrawn - reserved
+    if available < 0:
+        available = 0
+    return {
+        "available_balance": int(available),
+        "hold_balance": hold_balance(user_id),
+        "total_earned": int(earned),
+        "total_withdrawn": int(withdrawn),
+        "reserved_withdraw_balance": int(reserved),
+    }
 
 
 def ledger_add_once(
-    conn: sqlite3.Connection,
+    client,
     user_id: str,
     kind: str,
     amount: int,
     ref: Optional[str],
     meta: Optional[str],
 ) -> bool:
-    cur = conn.execute(
+    result = client.execute(
         "INSERT OR IGNORE INTO user_ledger(user_id, kind, amount, ref, meta) VALUES (?, ?, ?, ?, ?);",
         (user_id, kind, int(amount), ref, meta),
     )
-    return cur.rowcount == 1
+    return result.rows_affected == 1
 
 
 def create_withdraw_request(user_id: str, amount: int, method: str, number: str) -> str:
@@ -860,10 +838,10 @@ def create_withdraw_request(user_id: str, amount: int, method: str, number: str)
 
     withdrawal_id = str(uuid.uuid4())
 
-    def _tx(conn: sqlite3.Connection):
-        earned = ledger_sum(conn, user_id, "earn") + ledger_sum(conn, user_id, "admin_credit")
-        withdrawn = ledger_sum(conn, user_id, "withdraw")
-        reserved = reserved_withdraw_sum(conn, user_id)
+    def _tx(client):
+        earned = ledger_sum(client, user_id, "earn") + ledger_sum(client, user_id, "admin_credit")
+        withdrawn = ledger_sum(client, user_id, "withdraw")
+        reserved = reserved_withdraw_sum(client, user_id)
         available = earned - withdrawn - reserved
         if available < amount:
             raise HTTPException(
@@ -871,7 +849,7 @@ def create_withdraw_request(user_id: str, amount: int, method: str, number: str)
                 detail={"message": "Insufficient balance", "available": max(int(available), 0)},
             )
 
-        conn.execute(
+        client.execute(
             """
             INSERT INTO withdrawals(withdrawal_id, user_id, amount, status, method, number, updated_at)
             VALUES (?, ?, ?, 'pending', ?, ?, CURRENT_TIMESTAMP);
@@ -884,64 +862,54 @@ def create_withdraw_request(user_id: str, amount: int, method: str, number: str)
 
 
 def list_withdrawals(user_id: str) -> List[Dict[str, Any]]:
-    conn = db_connect()
-    try:
-        rows = conn.execute(
-            """
-            SELECT withdrawal_id, amount, status, method, number, meta, admin_txid, admin_note, created_at, updated_at, paid_at
-            FROM withdrawals
-            WHERE user_id=?
-            ORDER BY created_at DESC;
-            """,
-            (user_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    return db_fetchall(
+        """
+        SELECT withdrawal_id, amount, status, method, number, meta, admin_txid, admin_note, created_at, updated_at, paid_at
+        FROM withdrawals
+        WHERE user_id=?
+        ORDER BY created_at DESC;
+        """,
+        (user_id,),
+    )
 
 
 def list_all_withdrawals(status: Optional[str] = None) -> List[Dict[str, Any]]:
-    conn = db_connect()
-    try:
-        if status:
-            rows = conn.execute(
-                """
-                SELECT withdrawal_id, user_id, amount, status, method, number, meta, admin_txid, admin_note, created_at, updated_at, paid_at
-                FROM withdrawals
-                WHERE status=?
-                ORDER BY created_at DESC;
-                """,
-                (status,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT withdrawal_id, user_id, amount, status, method, number, meta, admin_txid, admin_note, created_at, updated_at, paid_at
-                FROM withdrawals
-                ORDER BY created_at DESC;
-                """
-            ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    if status:
+        return db_fetchall(
+            """
+            SELECT withdrawal_id, user_id, amount, status, method, number, meta, admin_txid, admin_note, created_at, updated_at, paid_at
+            FROM withdrawals
+            WHERE status=?
+            ORDER BY created_at DESC;
+            """,
+            (status,),
+        )
+    return db_fetchall(
+        """
+        SELECT withdrawal_id, user_id, amount, status, method, number, meta, admin_txid, admin_note, created_at, updated_at, paid_at
+        FROM withdrawals
+        ORDER BY created_at DESC;
+        """
+    )
 
 
 def admin_confirm_withdraw(withdrawal_id: str, txid: str, note: str) -> None:
     txid = (txid or "").strip()
     note = (note or "").strip()
 
-    def _tx(conn: sqlite3.Connection):
-        w = conn.execute(
+    def _tx(client):
+        w = db_fetchone_client(
+            client,
             "SELECT withdrawal_id, user_id, amount, status FROM withdrawals WHERE withdrawal_id=?;",
             (withdrawal_id,),
-        ).fetchone()
+        )
         if not w:
             raise HTTPException(status_code=404, detail="Withdrawal not found")
         if w["status"] != "pending":
             raise HTTPException(status_code=400, detail={"message": "Not pending", "status": w["status"]})
 
         ok = ledger_add_once(
-            conn=conn,
+            client=client,
             user_id=str(w["user_id"]),
             kind="withdraw",
             amount=int(w["amount"]),
@@ -951,7 +919,7 @@ def admin_confirm_withdraw(withdrawal_id: str, txid: str, note: str) -> None:
         if not ok:
             raise HTTPException(status_code=409, detail="Already finalized in ledger")
 
-        conn.execute(
+        client.execute(
             """
             UPDATE withdrawals
             SET status='paid', admin_txid=?, admin_note=?, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
@@ -966,17 +934,18 @@ def admin_confirm_withdraw(withdrawal_id: str, txid: str, note: str) -> None:
 def admin_reject_withdraw(withdrawal_id: str, note: str) -> None:
     note = (note or "").strip()
 
-    def _tx(conn: sqlite3.Connection):
-        w = conn.execute(
+    def _tx(client):
+        w = db_fetchone_client(
+            client,
             "SELECT withdrawal_id, status FROM withdrawals WHERE withdrawal_id=?;",
             (withdrawal_id,),
-        ).fetchone()
+        )
         if not w:
             raise HTTPException(status_code=404, detail="Withdrawal not found")
         if w["status"] != "pending":
             raise HTTPException(status_code=400, detail={"message": "Not pending", "status": w["status"]})
 
-        conn.execute(
+        client.execute(
             """
             UPDATE withdrawals
             SET status='rejected', admin_note=?, updated_at=CURRENT_TIMESTAMP
@@ -1003,9 +972,9 @@ async def sync_user_tasks(user_id: str) -> None:
         norm = normalize_status(raw_status)
         final = is_final_status(norm)
 
-        def _tx(conn: sqlite3.Connection):
+        def _tx(client):
             update_task_status(
-                conn,
+                client,
                 user_id=user_id,
                 job_task_id=tid,
                 status_raw=raw_status,
@@ -1013,7 +982,7 @@ async def sync_user_tasks(user_id: str) -> None:
                 final=final,
             )
             if final and norm == "confirmed":
-                ledger_add_once(conn, user_id=user_id, kind="earn", amount=CREDIT_PER_CONFIRMED, ref=tid, meta=None)
+                ledger_add_once(client, user_id=user_id, kind="earn", amount=CREDIT_PER_CONFIRMED, ref=tid, meta=None)
 
         with_write_tx(_tx)
 
@@ -1273,25 +1242,32 @@ async def user_tasks_page(request: Request):
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
     admin = require_admin(request)
-    w_all = list_all_withdrawals(status=None)
     return templates.TemplateResponse(
         "admin_dashboard.html",
-        {"request": request, "admin": admin, "withdrawals": w_all, "error": None, "success": None},
+        {"request": request, "admin": admin, "stats": admin_overview_stats()},
+    )
+
+
+@app.get("/admin/credit", response_class=HTMLResponse)
+def admin_credit_page(request: Request):
+    admin = require_admin(request)
+    return templates.TemplateResponse(
+        "admin_credit.html",
+        {"request": request, "admin": admin, "error": None, "success": None},
     )
 
 
 @app.post("/admin/credit")
 def admin_add_credit(request: Request, target_username: str = Form(...), amount: int = Form(...), note: str = Form("")):
-    require_admin(request)
+    admin = require_admin(request)
     target_username = target_username.strip().lower()
     u = get_user_by_username(target_username)
     if not u:
         return templates.TemplateResponse(
-            "admin_dashboard.html",
+            "admin_credit.html",
             {
                 "request": request,
-                "admin": require_admin(request),
-                "withdrawals": list_all_withdrawals(),
+                "admin": admin,
                 "error": "User not found",
                 "success": None,
             },
@@ -1300,11 +1276,10 @@ def admin_add_credit(request: Request, target_username: str = Form(...), amount:
     amount = int(amount)
     if amount <= 0:
         return templates.TemplateResponse(
-            "admin_dashboard.html",
+            "admin_credit.html",
             {
                 "request": request,
-                "admin": require_admin(request),
-                "withdrawals": list_all_withdrawals(),
+                "admin": admin,
                 "error": "Amount must be > 0",
                 "success": None,
             },
@@ -1312,20 +1287,29 @@ def admin_add_credit(request: Request, target_username: str = Form(...), amount:
 
     ref = str(uuid.uuid4())
 
-    def _tx(conn: sqlite3.Connection):
-        ledger_add_once(conn, u["user_id"], "admin_credit", amount, ref=ref, meta=f"note={note}")
+    def _tx(client):
+        ledger_add_once(client, u["user_id"], "admin_credit", amount, ref=ref, meta=f"note={note}")
 
     with_write_tx(_tx)
 
     return templates.TemplateResponse(
-        "admin_dashboard.html",
+        "admin_credit.html",
         {
             "request": request,
-            "admin": require_admin(request),
-            "withdrawals": list_all_withdrawals(),
+            "admin": admin,
             "error": None,
             "success": f"Credited {amount} to {target_username}",
         },
+    )
+
+
+@app.get("/admin/withdrawals", response_class=HTMLResponse)
+def admin_withdrawals_page(request: Request):
+    admin = require_admin(request)
+    w_all = list_all_withdrawals(status=None)
+    return templates.TemplateResponse(
+        "admin_withdrawals.html",
+        {"request": request, "admin": admin, "withdrawals": w_all, "error": None, "success": None},
     )
 
 
@@ -1333,14 +1317,14 @@ def admin_add_credit(request: Request, target_username: str = Form(...), amount:
 def admin_confirm_withdrawal_web(request: Request, withdrawal_id: str = Form(...), txid: str = Form(""), note: str = Form("")):
     require_admin(request)
     admin_confirm_withdraw(withdrawal_id=withdrawal_id, txid=txid, note=note)
-    return RedirectResponse(url="/admin", status_code=302)
+    return RedirectResponse(url="/admin/withdrawals", status_code=302)
 
 
 @app.post("/admin/withdrawals/reject")
 def admin_reject_withdrawal_web(request: Request, withdrawal_id: str = Form(...), note: str = Form("")):
     require_admin(request)
     admin_reject_withdraw(withdrawal_id=withdrawal_id, note=note)
-    return RedirectResponse(url="/admin", status_code=302)
+    return RedirectResponse(url="/admin/withdrawals", status_code=302)
 
 
 # =========================
