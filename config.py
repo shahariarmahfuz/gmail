@@ -10,7 +10,7 @@ UPSTREAM_JOB_ID = "69339726ce0295f74e58fe84"
 CREDIT_PER_CONFIRMED = 10
 
 # Turso database configuration
-DB_URL = "https://gg-anime.aws-ap-south-1.turso.io"
+DB_URL = "libsql://gg-anime.aws-ap-south-1.turso.io"
 DB_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzAzOTg1MTUsImlkIjoiN2Y1NTA0N2YtZmU5OC00NGVjLTliY2QtNmJjMDQ0ZDU1MTljIiwicmlkIjoiNjE5ZWNhNTktYjFlNi00YWQyLWIyMDQtYTVkNTUxNjU5Mjk1In0.Qcbf8BexSLdZAegoxlAFJcCwJLFn_mD2GDhgfL5gXhRMnrP3aTRl3IsI2SCGxWiN79FMWf3GbV2aPtdIJiBkCg"
 
 # App/server settings
