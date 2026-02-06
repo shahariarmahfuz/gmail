@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Gmail Submit</title>
+</head>
+<body>
+  <h2>Gmail Submit (Auto Format)</h2>
+  <p>Logged in as: <b>{{ user.username }}</b></p>
+
+  {% include "_user_nav.html" %}
+
+  {% if error %}<p style="color:red;"><b>{{ error }}</b></p>{% endif %}
+  {% if success %}<p style="color:green;"><b>{{ success }}</b></p>{% endif %}
+
+  <h3>Step 1: Enter Gmail</h3>
+  <form method="post" action="/user/gmail/start">
+    <input name="gmail" type="email" placeholder="example@gmail.com" required value="{{ draft.gmail if draft else '' }}">
+    <button type="submit">Generate Password + Recovery</button>
+  </form>
+
+  {% if draft and draft.gmail %}
+    <hr>
+    <h3>Generated Info</h3>
+    <ul>
+      <li>Gmail: <b>{{ draft.gmail }}</b></li>
+      <li>Password: <b>{{ draft.gen_password }}</b></li>
+      <li>Recovery Email (theme): <b>{{ draft.recovery_email }}</b></li>
+    </ul>
+
+    <h3>Step 2: Upload Authenticator QR Screenshot</h3>
+    <p style="color:#555;">
+      টিপস: QR যেন পরিষ্কার দেখা যায়—QR অংশটা zoom করে screenshot দিন।
+    </p>
+
+    <form method="post" action="/user/gmail/upload-qr" enctype="multipart/form-data">
+      <input type="file" name="qr_image" accept="image/*" required>
+      <button type="submit">Extract Secret</button>
+    </form>
+  {% endif %}
+
+  {% if draft and draft.secret %}
+    <hr>
+    <h3>Secret Key</h3>
+    <p><b>{{ draft.secret }}</b></p>
+
+    <h3>Live Authenticator Code</h3>
+    <div style="font-size:40px; font-weight:bold;" id="totp_code">------</div>
+    <div style="color:#555;" id="totp_meta">Loading...</div>
+
+    <script>
+      async function refreshTotp() {
+        try {
+          const r = await fetch("/user/gmail/totp", {cache: "no-store"});
+          const j = await r.json();
+          if (!j.ok) {
+            document.getElementById("totp_code").innerText = "------";
+            document.getElementById("totp_meta").innerText = j.error || "No secret";
+            return;
+          }
+          document.getElementById("totp_code").innerText = j.code;
+          document.getElementById("totp_meta").innerText = `Refresh in ${j.remaining}s (period ${j.period}s)`;
+        } catch (e) {
+          document.getElementById("totp_meta").innerText = "Error fetching code";
+        }
+      }
+      refreshTotp();
+      setInterval(refreshTotp, 1000);
+    </script>
+
+    <hr>
+    <h3>Step 3: Submit Job Proof (Server Auto Format)</h3>
+    <p style="color:#555;">
+      Job proof format: <code>gmail:password:recovery_email:secret</code>
+    </p>
+
+    <form method="post" action="/user/gmail/submit">
+      <button type="submit">Submit Now</button>
+    </form>
+  {% endif %}
+
+  <hr>
+  <form method="post" action="/user/gmail/reset">
+    <button type="submit">Reset Draft</button>
+  </form>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Admin Dashboard</title></head>
+<body>
+  <h2>Admin Dashboard</h2>
+  <p>Logged in as: <b>{{ admin.username }}</b> | <a href="/admin/logout">Logout</a></p>
+
+  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+  {% if success %}<p style="color:green;">{{ success }}</p>{% endif %}
+
+  <hr>
+
+  <h3>Add Balance to User (by username)</h3>
+  <form method="post" action="/admin/credit">
+    <div>
+      <label>Username</label><br>
+      <input name="target_username" required>
+    </div>
+    <div>
+      <label>Amount</label><br>
+      <input name="amount" type="number" min="1" required>
+    </div>
+    <div>
+      <label>Note</label><br>
+      <input name="note">
+    </div>
+    <button type="submit">Add Credit</button>
+  </form>
+
+  <hr>
+
+  <h3>Withdrawals</h3>
+  <table border="1" cellpadding="6" cellspacing="0">
+    <tr>
+      <th>ID</th>
+      <th>User ID</th>
+      <th>Amount</th>
+      <th>Status</th>
+      <th>Method</th>
+      <th>Number</th>
+      <th>TXID</th>
+      <th>Note</th>
+      <th>Actions</th>
+    </tr>
+    {% for w in withdrawals %}
+    <tr>
+      <td>{{ w.withdrawal_id }}</td>
+      <td>{{ w.user_id }}</td>
+      <td>{{ w.amount }}</td>
+      <td>{{ w.status }}</td>
+      <td>{{ w.method }}</td>
+      <td>{{ w.number }}</td>
+      <td>{{ w.admin_txid or "" }}</td>
+      <td>{{ w.admin_note or "" }}</td>
+      <td>
+        {% if w.status == "pending" %}
+        <form method="post" action="/admin/withdrawals/confirm" style="margin-bottom:6px;">
+          <input type="hidden" name="withdrawal_id" value="{{ w.withdrawal_id }}">
+          <input name="txid" placeholder="txid">
+          <input name="note" placeholder="note">
+          <button type="submit">Mark Paid</button>
+        </form>
+        <form method="post" action="/admin/withdrawals/reject">
+          <input type="hidden" name="withdrawal_id" value="{{ w.withdrawal_id }}">
+          <input name="note" placeholder="reject note">
+          <button type="submit">Reject</button>
+        </form>
+        {% else %}
+        -
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <p style="margin-top:20px;">Default admin (dev): <b>admin / admin</b></p>
+</body>
+</html>

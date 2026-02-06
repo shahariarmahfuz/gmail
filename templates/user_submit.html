@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Submit Job Proof</title></head>
+<body>
+  <h2>Submit Job Proof</h2>
+  <p>Logged in as: <b>{{ user.username }}</b></p>
+
+  {% include "_user_nav.html" %}
+
+  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+
+  <form method="post" action="/user/submit">
+    <div>
+      <label>Job Proof</label><br>
+      <textarea name="job_proof" rows="4" cols="70" required></textarea>
+    </div>
+    <button type="submit">Submit</button>
+  </form>
+
+</body>
+</html>

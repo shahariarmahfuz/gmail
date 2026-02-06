@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>My Tasks</title></head>
+<body>
+  <h2>My Tasks</h2>
+  <p>Logged in as: <b>{{ user.username }}</b></p>
+
+  {% include "_user_nav.html" %}
+
+  <table border="1" cellpadding="6" cellspacing="0">
+    <tr>
+      <th>Task ID</th>
+      <th>Status</th>
+      <th>Final?</th>
+      <th>Last Sync</th>
+      <th>Created</th>
+    </tr>
+    {% for t in tasks %}
+    <tr>
+      <td>{{ t.job_task_id }}</td>
+      <td>{{ t.status_norm or "unknown" }}</td>
+      <td>{{ "yes" if t.is_final else "no" }}</td>
+      <td>{{ t.last_sync_at or "" }}</td>
+      <td>{{ t.created_at }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+</body>
+</html>
