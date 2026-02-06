@@ -6,6 +6,8 @@ import time
 import base64
 import struct
 import re
+import asyncio
+import logging
 from typing import Optional, Dict, Any, List, Tuple
 from urllib.parse import urlparse, parse_qs
 
@@ -36,6 +38,12 @@ from config import (
 
 UPSTREAM_BASE_URL = UPSTREAM_BASE_URL.rstrip("/")
 
+logger = logging.getLogger("task_proxy_wallet")
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 app = FastAPI(title=APP_TITLE, version=APP_VERSION)
 
 if os.path.isdir("static"):
@@ -43,22 +51,23 @@ if os.path.isdir("static"):
 
 templates = Jinja2Templates(directory="templates")
 
-
 # =========================
 # DB / Connection
 # =========================
 db_client = None
+_write_lock = asyncio.Lock()
 
 
 def _rows_to_dicts(result) -> List[Dict[str, Any]]:
-    if not result or not result.rows:
+    if not result or not getattr(result, "rows", None):
         return []
-    columns = []
-    if result.columns:
-        columns = [c.name if hasattr(c, "name") else c for c in result.columns]
-    if not columns:
+    cols = []
+    if getattr(result, "columns", None):
+        cols = [c.name if hasattr(c, "name") else c for c in result.columns]
+    if not cols:
+        # fallback: index-based
         return [dict(enumerate(row)) for row in result.rows]
-    return [dict(zip(columns, row)) for row in result.rows]
+    return [dict(zip(cols, row)) for row in result.rows]
 
 
 async def db_fetchone(sql: str, args: Tuple[Any, ...] = ()) -> Optional[Dict[str, Any]]:
@@ -88,18 +97,43 @@ async def _table_has_column(table: str, column: str) -> bool:
     return column in cols
 
 
+async def _begin_tx(client) -> None:
+    # libsql supports normal sqlite BEGIN; try IMMEDIATE first to reduce writer contention
+    try:
+        await client.execute("BEGIN IMMEDIATE;")
+    except Exception:
+        await client.execute("BEGIN;")
+
+
 async def with_write_tx(fn):
+    """
+    Proper write transaction wrapper.
+    - serializes writers (asyncio lock) to reduce libsql busy errors
+    - uses BEGIN/COMMIT/ROLLBACK
+    - uses asyncio.sleep backoff
+    """
     attempts = 5
     for i in range(attempts):
-        try:
-            return await fn(db_client)
-        except Exception as e:
-            msg = str(e).lower()
-            if "database is locked" in msg or "locked" in msg:
-                if i < attempts - 1:
-                    time.sleep(0.15 * (i + 1))
+        async with _write_lock:
+            begun = False
+            try:
+                await _begin_tx(db_client)
+                begun = True
+                result = await fn(db_client)
+                await db_client.execute("COMMIT;")
+                return result
+            except Exception as e:
+                if begun:
+                    try:
+                        await db_client.execute("ROLLBACK;")
+                    except Exception:
+                        pass
+
+                msg = str(e).lower()
+                if ("database is locked" in msg or "locked" in msg or "busy" in msg) and i < attempts - 1:
+                    await asyncio.sleep(0.15 * (i + 1))
                     continue
-            raise
+                raise
 
 
 async def db_init() -> None:
@@ -135,8 +169,8 @@ async def db_init() -> None:
         """
         CREATE TABLE IF NOT EXISTS sessions (
             session_id TEXT PRIMARY KEY,
-            kind TEXT NOT NULL,          -- 'user' | 'admin'
-            principal_id TEXT NOT NULL,  -- user_id/admin_id
+            kind TEXT NOT NULL,
+            principal_id TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         """
@@ -181,8 +215,10 @@ async def db_init() -> None:
     await db_execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_jobtask ON user_tasks(user_id, job_task_id);")
     await db_execute("CREATE INDEX IF NOT EXISTS ix_user_tasks_userid ON user_tasks(user_id);")
     await db_execute("CREATE INDEX IF NOT EXISTS ix_user_tasks_final ON user_tasks(is_final);")
+    await db_execute("CREATE INDEX IF NOT EXISTS ix_user_tasks_gmail ON user_tasks(gmail);")
+    await db_execute("CREATE INDEX IF NOT EXISTS ix_user_tasks_status ON user_tasks(status_norm);")
 
-    # Draft table for "gmail + password + recovery + secret"
+    # Draft table
     await db_execute(
         """
         CREATE TABLE IF NOT EXISTS user_drafts (
@@ -212,8 +248,8 @@ async def db_init() -> None:
         CREATE TABLE IF NOT EXISTS user_ledger (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
-            kind TEXT NOT NULL,          -- 'earn' | 'admin_credit' | 'withdraw'
-            amount INTEGER NOT NULL,     -- positive integer
+            kind TEXT NOT NULL,
+            amount INTEGER NOT NULL,
             ref TEXT,
             meta TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -237,7 +273,7 @@ async def db_init() -> None:
             withdrawal_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
             amount INTEGER NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',   -- pending | paid | rejected
+            status TEXT NOT NULL DEFAULT 'pending',
             method TEXT NOT NULL,
             number TEXT NOT NULL,
             meta TEXT,
@@ -252,7 +288,7 @@ async def db_init() -> None:
     await db_execute("CREATE INDEX IF NOT EXISTS ix_withdrawals_user ON withdrawals(user_id);")
     await db_execute("CREATE INDEX IF NOT EXISTS ix_withdrawals_status ON withdrawals(status);")
 
-    # Default admin (dev/test): admin/admin
+    # Default admin
     row = await db_fetchone("SELECT COUNT(*) AS c FROM admins;")
     if row and int(row["c"]) == 0:
         admin_id = str(uuid.uuid4())
@@ -267,6 +303,21 @@ async def on_startup():
     global db_client
     db_client = create_client(DB_URL, auth_token=DB_TOKEN)
     await db_init()
+    logger.info("Startup complete. DB ready.")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    global db_client
+    try:
+        if db_client:
+            close = getattr(db_client, "close", None)
+            if asyncio.iscoroutinefunction(close):
+                await close()
+            elif callable(close):
+                close()
+    except Exception:
+        pass
 
 
 # =========================
@@ -462,8 +513,12 @@ async def upsert_user_task(
     async def _tx(client):
         await client.execute(
             """
-            INSERT OR IGNORE INTO user_tasks(user_id, job_id, job_task_id, gmail, gen_password, recovery_email)
-            VALUES (?, ?, ?, ?, ?, ?);
+            INSERT OR IGNORE INTO user_tasks(
+                user_id, job_id, job_task_id,
+                gmail, gen_password, recovery_email,
+                status_norm, is_final
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', 0);
             """,
             (user_id, job_id, job_task_id, gmail, gen_password, recovery_email),
         )
@@ -630,29 +685,6 @@ async def admin_user_withdrawals(user_id: str) -> List[Dict[str, Any]]:
     )
 
 
-async def admin_user_gmail_list() -> List[Dict[str, Any]]:
-    return await db_fetchall(
-        """
-        SELECT u.user_id,
-               u.username,
-               d.gmail,
-               d.recovery_email,
-               d.secret,
-               d.created_at,
-               d.updated_at,
-               COALESCE(SUM(CASE WHEN t.status_norm='confirmed' THEN 1 ELSE 0 END), 0) AS confirmed_count,
-               COALESCE(SUM(CASE WHEN t.status_norm='pending' THEN 1 ELSE 0 END), 0) AS pending_count,
-               COALESCE(SUM(CASE WHEN t.status_norm='processing' THEN 1 ELSE 0 END), 0) AS processing_count,
-               COALESCE(SUM(CASE WHEN t.status_norm='declined' THEN 1 ELSE 0 END), 0) AS declined_count
-        FROM users u
-        LEFT JOIN user_drafts d ON d.user_id = u.user_id
-        LEFT JOIN user_tasks t ON t.user_id = u.user_id
-        GROUP BY u.user_id, u.username, d.gmail, d.recovery_email, d.secret, d.created_at, d.updated_at
-        ORDER BY d.updated_at DESC NULLS LAST, u.created_at DESC;
-        """
-    )
-
-
 async def set_user_ban(user_id: str, banned: bool) -> None:
     async def _tx(client):
         await client.execute(
@@ -664,7 +696,7 @@ async def set_user_ban(user_id: str, banned: bool) -> None:
 
 
 # =========================
-# Draft helpers (gmail/password/recovery/secret)
+# Draft helpers
 # =========================
 async def get_draft(user_id: str) -> Optional[Dict[str, Any]]:
     return await db_fetchone(
@@ -697,7 +729,6 @@ def _rand_digits(n: int) -> str:
 
 
 async def generate_pretty_password() -> str:
-    # Example style: behivgusez@1074
     while True:
         candidate = f"{_rand_letters(10)}@{_rand_digits(4)}"
         exists = await db_fetchone(
@@ -714,7 +745,6 @@ async def generate_pretty_password() -> str:
 
 
 async def generate_recovery_email() -> str:
-    # Example style: gopemlixiw155@xneko.xyz
     while True:
         candidate = f"{_rand_letters(9)}{_rand_digits(3)}@{RECOVERY_DOMAIN}"
         exists = await db_fetchone(
@@ -736,7 +766,7 @@ async def start_or_reset_draft(user_id: str, gmail: str) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Valid Gmail is required")
 
     last_task = await get_latest_task_for_gmail(user_id, gmail)
-    if last_task and last_task.get("status_norm") in ("confirmed", "pending", "processing"):
+    if last_task and (last_task.get("status_norm") in ("confirmed", "pending", "processing")):
         raise HTTPException(status_code=400, detail="This Gmail is already submitted or in progress")
 
     if last_task and last_task.get("status_norm") == "declined":
@@ -793,12 +823,12 @@ BASE32_RE = re.compile(r"^[A-Z2-7]+=*$")
 
 def _clean_base32(s: str) -> str:
     s = (s or "").strip().replace(" ", "").replace("-", "")
-    s = s.upper()
-    return s
+    return s.upper()
 
 
 def decode_qr_payload_from_image(image_bytes: bytes) -> str:
     import cv2
+
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
@@ -806,21 +836,18 @@ def decode_qr_payload_from_image(image_bytes: bytes) -> str:
 
     detector = cv2.QRCodeDetector()
 
-    # Try single decode
-    data, points, _ = detector.detectAndDecode(img)
+    data, _, _ = detector.detectAndDecode(img)
     if data and data.strip():
         return data.strip()
 
-    # Try scale-up and grayscale
     img2 = cv2.resize(img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-    data, points, _ = detector.detectAndDecode(gray)
+    data, _, _ = detector.detectAndDecode(gray)
     if data and data.strip():
         return data.strip()
 
-    # Try multi decode (if supported)
     try:
-        ok, decoded_info, points, _ = detector.detectAndDecodeMulti(img2)
+        ok, decoded_info, _, _ = detector.detectAndDecodeMulti(img2)
         if ok and decoded_info:
             for d in decoded_info:
                 if d and d.strip():
@@ -832,15 +859,10 @@ def decode_qr_payload_from_image(image_bytes: bytes) -> str:
 
 
 def extract_secret_from_qr_payload(payload: str) -> Tuple[str, int, int]:
-    """
-    Returns: (secret_base32, digits, period)
-    """
     payload = (payload or "").strip()
-
     digits = 6
     period = 30
 
-    # Typical QR contains otpauth://totp/...?...secret=XXXX&digits=6&period=30
     if payload.lower().startswith("otpauth://"):
         u = urlparse(payload)
         q = parse_qs(u.query)
@@ -857,18 +879,14 @@ def extract_secret_from_qr_payload(payload: str) -> Tuple[str, int, int]:
                 pass
         if not sec:
             raise ValueError("QR decoded but secret param not found")
-        sec = _clean_base32(sec)
-        return sec, digits, period
+        return _clean_base32(sec), digits, period
 
-    # Sometimes QR is just the secret
     sec = _clean_base32(payload)
     if not sec:
         raise ValueError("Empty QR payload")
 
-    # Basic base32 validation (allow missing padding)
     test = sec + ("=" * ((8 - (len(sec) % 8)) % 8))
     if not BASE32_RE.match(test):
-        # still allow some authenticators which embed extra text; try to find secret=...
         m = re.search(r"secret=([A-Za-z2-7=]+)", payload)
         if m:
             sec2 = _clean_base32(m.group(1))
@@ -885,7 +903,6 @@ def totp_now(secret_b32: str, digits: int = 6, period: int = 30) -> Tuple[str, i
     if not secret_b32:
         raise ValueError("Missing secret")
 
-    # pad for base32 decoding
     padded = secret_b32 + ("=" * ((8 - (len(secret_b32) % 8)) % 8))
     key = base64.b32decode(padded, casefold=True)
 
@@ -980,7 +997,12 @@ async def ledger_add_once(
         "INSERT OR IGNORE INTO user_ledger(user_id, kind, amount, ref, meta) VALUES (?, ?, ?, ?, ?);",
         (user_id, kind, int(amount), ref, meta),
     )
-    return result.rows_affected == 1
+    # libsql client uses rows_affected
+    rows_affected = getattr(result, "rows_affected", None)
+    if rows_affected is None:
+        # fallback best-effort
+        return True
+    return int(rows_affected) == 1
 
 
 async def create_withdraw_request(user_id: str, amount: int, method: str, number: str) -> str:
@@ -1168,7 +1190,7 @@ async def admin_reject_withdraw(withdrawal_id: str, note: str) -> None:
 
 
 # =========================
-# Sync logic (final tasks never requested again)
+# Sync logic
 # =========================
 async def sync_user_tasks(user_id: str) -> None:
     require_upstream_config()
@@ -1223,7 +1245,6 @@ async def home(request: Request):
     return templates.TemplateResponse("home.html", {"request": request})
 
 
-# --- USER AUTH ---
 @app.get("/signup", response_class=HTMLResponse)
 def signup_page(request: Request):
     return templates.TemplateResponse("signup.html", {"request": request, "error": None})
@@ -1281,7 +1302,6 @@ async def logout(request: Request):
     return resp
 
 
-# --- ADMIN AUTH ---
 @app.get("/admin/login", response_class=HTMLResponse)
 def admin_login_page(request: Request):
     return templates.TemplateResponse("admin_login.html", {"request": request, "error": None})
@@ -1310,16 +1330,13 @@ async def admin_logout(request: Request):
     return resp
 
 
-# =========================
-# USER PAGES
-# =========================
 @app.get("/user/dashboard", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
     user = await require_user(request)
     try:
         await sync_user_tasks(user["user_id"])
     except Exception:
-        pass
+        logger.exception("sync_user_tasks failed on dashboard (user_id=%s)", user["user_id"])
 
     b = await balances(user["user_id"])
     stats = await task_stats(user["user_id"])
@@ -1493,14 +1510,11 @@ async def user_tasks_page(request: Request):
     try:
         await sync_user_tasks(user["user_id"])
     except Exception:
-        pass
+        logger.exception("sync_user_tasks failed on tasks page (user_id=%s)", user["user_id"])
     tasks = await get_tasks_for_user(user["user_id"])
     return templates.TemplateResponse("user_tasks.html", {"request": request, "user": user, "tasks": tasks})
 
 
-# =========================
-# ADMIN DASH
-# =========================
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request):
     admin = await require_admin(request)
@@ -1532,24 +1546,14 @@ async def admin_add_credit(
     if not u:
         return templates.TemplateResponse(
             "admin_credit.html",
-            {
-                "request": request,
-                "admin": admin,
-                "error": "User not found",
-                "success": None,
-            },
+            {"request": request, "admin": admin, "error": "User not found", "success": None},
         )
 
     amount = int(amount)
     if amount <= 0:
         return templates.TemplateResponse(
             "admin_credit.html",
-            {
-                "request": request,
-                "admin": admin,
-                "error": "Amount must be > 0",
-                "success": None,
-            },
+            {"request": request, "admin": admin, "error": "Amount must be > 0", "success": None},
         )
 
     ref = str(uuid.uuid4())
@@ -1561,12 +1565,7 @@ async def admin_add_credit(
 
     return templates.TemplateResponse(
         "admin_credit.html",
-        {
-            "request": request,
-            "admin": admin,
-            "error": None,
-            "success": f"Credited {amount} to {target_username}",
-        },
+        {"request": request, "admin": admin, "error": None, "success": f"Credited {amount} to {target_username}"},
     )
 
 
@@ -1576,13 +1575,7 @@ async def admin_withdrawals_page(request: Request):
     w_all = await admin_withdrawals_overview(status=None)
     return templates.TemplateResponse(
         "admin_withdrawals.html",
-        {
-            "request": request,
-            "admin": admin,
-            "withdrawals": w_all,
-            "error": None,
-            "success": None,
-        },
+        {"request": request, "admin": admin, "withdrawals": w_all, "error": None, "success": None},
     )
 
 
@@ -1615,13 +1608,7 @@ async def admin_users_page(request: Request):
     users = await admin_user_list()
     return templates.TemplateResponse(
         "admin_users.html",
-        {
-            "request": request,
-            "admin": admin,
-            "users": users,
-            "error": None,
-            "success": None,
-        },
+        {"request": request, "admin": admin, "users": users, "error": None, "success": None},
     )
 
 
@@ -1656,11 +1643,9 @@ async def admin_user_detail_page(request: Request, user_id: str):
     )
 
 
-# =========================
-# Direct run
-# =========================
 def run():
     import uvicorn
+
     if RELOAD:
         uvicorn.run("main:app", host=HOST, port=PORT, reload=True)
     else:
