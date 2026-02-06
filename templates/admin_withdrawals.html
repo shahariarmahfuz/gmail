@@ -11,45 +11,69 @@
   <hr>
 
   <h3>উইথড্র রিকুয়েস্ট</h3>
+  {% for w in withdrawals %}
+  <div style="border:1px solid #ccc; padding:12px; margin:12px 0; border-radius:8px;">
+    <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <div>
+        <b>রিকুয়েস্ট আইডি:</b> {{ w.withdrawal_id }}<br>
+        <b>ইউজার:</b> {{ w.username }} ({{ w.user_id }})<br>
+        <b>ব্যান:</b> {{ "Yes" if w.is_banned else "No" }}<br>
+        <b>জিমেইল:</b> {{ w.gmail or "N/A" }}<br>
+        <b>রিকভারি:</b> {{ w.recovery_email or "N/A" }}
+      </div>
+      <div>
+        <b>অ্যামাউন্ট:</b> {{ w.amount }}<br>
+        <b>স্ট্যাটাস:</b> {{ w.status }}<br>
+        <b>মেথড:</b> {{ w.method }}<br>
+        <b>নাম্বার:</b> {{ w.number }}<br>
+        <b>TXID:</b> {{ w.admin_txid or "" }}<br>
+        <b>নোট:</b> {{ w.admin_note or "" }}
+      </div>
+    </div>
+    <div style="margin-top:10px;">
+      {% if w.status == "pending" %}
+      <form method="post" action="/admin/withdrawals/confirm" style="margin-bottom:6px;">
+        <input type="hidden" name="withdrawal_id" value="{{ w.withdrawal_id }}">
+        <input name="txid" placeholder="txid">
+        <input name="note" placeholder="note">
+        <button type="submit">Mark Paid</button>
+      </form>
+      <form method="post" action="/admin/withdrawals/reject">
+        <input type="hidden" name="withdrawal_id" value="{{ w.withdrawal_id }}">
+        <input name="note" placeholder="reject note">
+        <button type="submit">Reject</button>
+      </form>
+      {% else %}
+      <i>Already finalized</i>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p>কোনো রিকুয়েস্ট নেই।</p>
+  {% endfor %}
+
+  <hr>
+
+  <h3>সকল জিমেইল ও স্ট্যাটাস</h3>
   <table border="1" cellpadding="6" cellspacing="0">
     <tr>
-      <th>ID</th>
-      <th>User ID</th>
-      <th>Amount</th>
-      <th>Status</th>
-      <th>Method</th>
-      <th>Number</th>
-      <th>TXID</th>
-      <th>Note</th>
-      <th>Actions</th>
+      <th>User</th>
+      <th>Gmail</th>
+      <th>Recovery</th>
+      <th>Confirmed</th>
+      <th>Pending</th>
+      <th>Processing</th>
+      <th>Declined</th>
     </tr>
-    {% for w in withdrawals %}
+    {% for g in gmail_list %}
     <tr>
-      <td>{{ w.withdrawal_id }}</td>
-      <td>{{ w.user_id }}</td>
-      <td>{{ w.amount }}</td>
-      <td>{{ w.status }}</td>
-      <td>{{ w.method }}</td>
-      <td>{{ w.number }}</td>
-      <td>{{ w.admin_txid or "" }}</td>
-      <td>{{ w.admin_note or "" }}</td>
-      <td>
-        {% if w.status == "pending" %}
-        <form method="post" action="/admin/withdrawals/confirm" style="margin-bottom:6px;">
-          <input type="hidden" name="withdrawal_id" value="{{ w.withdrawal_id }}">
-          <input name="txid" placeholder="txid">
-          <input name="note" placeholder="note">
-          <button type="submit">Mark Paid</button>
-        </form>
-        <form method="post" action="/admin/withdrawals/reject">
-          <input type="hidden" name="withdrawal_id" value="{{ w.withdrawal_id }}">
-          <input name="note" placeholder="reject note">
-          <button type="submit">Reject</button>
-        </form>
-        {% else %}
-        -
-        {% endif %}
-      </td>
+      <td>{{ g.username }} ({{ g.user_id }})</td>
+      <td>{{ g.gmail or "N/A" }}</td>
+      <td>{{ g.recovery_email or "N/A" }}</td>
+      <td>{{ g.confirmed_count }}</td>
+      <td>{{ g.pending_count }}</td>
+      <td>{{ g.processing_count }}</td>
+      <td>{{ g.declined_count }}</td>
     </tr>
     {% endfor %}
   </table>

@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Admin Users</title></head>
+<body>
+  <h2>Admin: User Management</h2>
+  <p>Logged in as: <b>{{ admin.username }}</b> | <a href="/admin">Dashboard</a> | <a href="/admin/logout">Logout</a></p>
+
+  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+  {% if success %}<p style="color:green;">{{ success }}</p>{% endif %}
+
+  <hr>
+
+  <h3>ইউজার তালিকা (ব্যান/আনব্যান)</h3>
+  <table border="1" cellpadding="6" cellspacing="0">
+    <tr>
+      <th>User</th>
+      <th>Created</th>
+      <th>Banned</th>
+      <th>Action</th>
+    </tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.username }} ({{ u.user_id }})</td>
+      <td>{{ u.created_at }}</td>
+      <td>{{ "Yes" if u.is_banned else "No" }}</td>
+      <td>
+        {% if u.is_banned %}
+        <form method="post" action="/admin/users/ban">
+          <input type="hidden" name="user_id" value="{{ u.user_id }}">
+          <input type="hidden" name="action" value="unban">
+          <button type="submit">Unban</button>
+        </form>
+        {% else %}
+        <form method="post" action="/admin/users/ban">
+          <input type="hidden" name="user_id" value="{{ u.user_id }}">
+          <input type="hidden" name="action" value="ban">
+          <button type="submit">Ban</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <hr>
+
+  <h3>সকল জিমেইল ও স্ট্যাটাস</h3>
+  <table border="1" cellpadding="6" cellspacing="0">
+    <tr>
+      <th>User</th>
+      <th>Gmail</th>
+      <th>Recovery</th>
+      <th>Confirmed</th>
+      <th>Pending</th>
+      <th>Processing</th>
+      <th>Declined</th>
+    </tr>
+    {% for g in gmail_list %}
+    <tr>
+      <td>{{ g.username }} ({{ g.user_id }})</td>
+      <td>{{ g.gmail or "N/A" }}</td>
+      <td>{{ g.recovery_email or "N/A" }}</td>
+      <td>{{ g.confirmed_count }}</td>
+      <td>{{ g.pending_count }}</td>
+      <td>{{ g.processing_count }}</td>
+      <td>{{ g.declined_count }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <hr>
+
+  <h3>ইউজার টাস্ক ডিটেইলস</h3>
+  {% for u in users %}
+  <div style="border:1px solid #ccc; padding:12px; margin:12px 0; border-radius:8px;">
+    <b>{{ u.username }}</b> ({{ u.user_id }}) | Banned: {{ "Yes" if u.is_banned else "No" }}
+    <table border="1" cellpadding="6" cellspacing="0" style="margin-top:8px; width:100%;">
+      <tr>
+        <th>Job ID</th>
+        <th>Task ID</th>
+        <th>Status Raw</th>
+        <th>Status Norm</th>
+        <th>Final</th>
+        <th>Last Sync</th>
+        <th>Created</th>
+      </tr>
+      {% for t in tasks_by_user[u.user_id|string] %}
+      <tr>
+        <td>{{ t.job_id }}</td>
+        <td>{{ t.job_task_id }}</td>
+        <td>{{ t.status_raw or "" }}</td>
+        <td>{{ t.status_norm or "" }}</td>
+        <td>{{ "Yes" if t.is_final else "No" }}</td>
+        <td>{{ t.last_sync_at or "" }}</td>
+        <td>{{ t.created_at }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7">No tasks found.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endfor %}
+</body>
+</html>

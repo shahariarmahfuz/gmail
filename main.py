@@ -110,10 +110,13 @@ async def db_init() -> None:
             user_id TEXT PRIMARY KEY,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
+            is_banned INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         """
     )
+    if not await _table_has_column("users", "is_banned"):
+        await db_execute("ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0;")
 
     # Admins
     await db_execute(
@@ -302,14 +305,14 @@ async def get_session(session_id: Optional[str]) -> Optional[Dict[str, str]]:
 
 async def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
     return await db_fetchone(
-        "SELECT user_id, username, password_hash FROM users WHERE username=?;",
+        "SELECT user_id, username, password_hash, is_banned FROM users WHERE username=?;",
         (username,),
     )
 
 
 async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     return await db_fetchone(
-        "SELECT user_id, username FROM users WHERE user_id=?;",
+        "SELECT user_id, username, is_banned FROM users WHERE user_id=?;",
         (user_id,),
     )
 
@@ -319,7 +322,7 @@ async def create_user(username: str, password: str) -> Dict[str, Any]:
 
     async def _tx(client):
         await client.execute(
-            "INSERT INTO users(user_id, username, password_hash) VALUES (?, ?, ?);",
+            "INSERT INTO users(user_id, username, password_hash, is_banned) VALUES (?, ?, ?, 0);",
             (user_id, username, hash_password(password)),
         )
 
@@ -349,6 +352,8 @@ async def require_user(request: Request) -> Dict[str, Any]:
     u = await get_user_by_id(s["principal_id"])
     if not u:
         raise HTTPException(status_code=401, detail="Invalid user session")
+    if int(u.get("is_banned") or 0) == 1:
+        raise HTTPException(status_code=403, detail="User is banned")
     return u
 
 
@@ -537,6 +542,61 @@ async def admin_overview_stats() -> Dict[str, int]:
         "total_withdrawals": int(total_withdrawals),
         "pending_withdrawals": int(pending_withdrawals),
     }
+
+
+async def admin_user_list() -> List[Dict[str, Any]]:
+    return await db_fetchall(
+        """
+        SELECT user_id, username, is_banned, created_at
+        FROM users
+        ORDER BY created_at DESC;
+        """
+    )
+
+
+async def admin_user_tasks(user_id: str) -> List[Dict[str, Any]]:
+    return await db_fetchall(
+        """
+        SELECT job_id, job_task_id, status_raw, status_norm, is_final, last_sync_at, created_at
+        FROM user_tasks
+        WHERE user_id=?
+        ORDER BY created_at DESC, id DESC;
+        """,
+        (user_id,),
+    )
+
+
+async def admin_user_gmail_list() -> List[Dict[str, Any]]:
+    return await db_fetchall(
+        """
+        SELECT u.user_id,
+               u.username,
+               d.gmail,
+               d.recovery_email,
+               d.secret,
+               d.created_at,
+               d.updated_at,
+               COALESCE(SUM(CASE WHEN t.status_norm='confirmed' THEN 1 ELSE 0 END), 0) AS confirmed_count,
+               COALESCE(SUM(CASE WHEN t.status_norm='pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+               COALESCE(SUM(CASE WHEN t.status_norm='processing' THEN 1 ELSE 0 END), 0) AS processing_count,
+               COALESCE(SUM(CASE WHEN t.status_norm='declined' THEN 1 ELSE 0 END), 0) AS declined_count
+        FROM users u
+        LEFT JOIN user_drafts d ON d.user_id = u.user_id
+        LEFT JOIN user_tasks t ON t.user_id = u.user_id
+        GROUP BY u.user_id, u.username, d.gmail, d.recovery_email, d.secret, d.created_at, d.updated_at
+        ORDER BY d.updated_at DESC NULLS LAST, u.created_at DESC;
+        """
+    )
+
+
+async def set_user_ban(user_id: str, banned: bool) -> None:
+    async def _tx(client):
+        await client.execute(
+            "UPDATE users SET is_banned=? WHERE user_id=?;",
+            (1 if banned else 0, user_id),
+        )
+
+    await with_write_tx(_tx)
 
 
 # =========================
@@ -890,6 +950,60 @@ async def list_all_withdrawals(status: Optional[str] = None) -> List[Dict[str, A
     )
 
 
+async def admin_withdrawals_overview(status: Optional[str] = None) -> List[Dict[str, Any]]:
+    if status:
+        return await db_fetchall(
+            """
+            SELECT w.withdrawal_id,
+                   w.user_id,
+                   u.username,
+                   u.is_banned,
+                   d.gmail,
+                   d.recovery_email,
+                   w.amount,
+                   w.status,
+                   w.method,
+                   w.number,
+                   w.meta,
+                   w.admin_txid,
+                   w.admin_note,
+                   w.created_at,
+                   w.updated_at,
+                   w.paid_at
+            FROM withdrawals w
+            JOIN users u ON u.user_id = w.user_id
+            LEFT JOIN user_drafts d ON d.user_id = w.user_id
+            WHERE w.status=?
+            ORDER BY w.created_at DESC;
+            """,
+            (status,),
+        )
+    return await db_fetchall(
+        """
+        SELECT w.withdrawal_id,
+               w.user_id,
+               u.username,
+               u.is_banned,
+               d.gmail,
+               d.recovery_email,
+               w.amount,
+               w.status,
+               w.method,
+               w.number,
+               w.meta,
+               w.admin_txid,
+               w.admin_note,
+               w.created_at,
+               w.updated_at,
+               w.paid_at
+        FROM withdrawals w
+        JOIN users u ON u.user_id = w.user_id
+        LEFT JOIN user_drafts d ON d.user_id = w.user_id
+        ORDER BY w.created_at DESC;
+        """
+    )
+
+
 async def admin_confirm_withdraw(withdrawal_id: str, txid: str, note: str) -> None:
     txid = (txid or "").strip()
     note = (note or "").strip()
@@ -1032,6 +1146,8 @@ async def login_submit(request: Request, username: str = Form(...), password: st
     u = await get_user_by_username(username)
     if not u or not verify_password(password, u["password_hash"]):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid credentials"})
+    if int(u.get("is_banned") or 0) == 1:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "User is banned"})
 
     sid = await create_session("user", u["user_id"])
     resp = RedirectResponse(url="/user/dashboard", status_code=302)
@@ -1321,10 +1437,18 @@ async def admin_add_credit(
 @app.get("/admin/withdrawals", response_class=HTMLResponse)
 async def admin_withdrawals_page(request: Request):
     admin = await require_admin(request)
-    w_all = await list_all_withdrawals(status=None)
+    w_all = await admin_withdrawals_overview(status=None)
+    gmail_list = await admin_user_gmail_list()
     return templates.TemplateResponse(
         "admin_withdrawals.html",
-        {"request": request, "admin": admin, "withdrawals": w_all, "error": None, "success": None},
+        {
+            "request": request,
+            "admin": admin,
+            "withdrawals": w_all,
+            "gmail_list": gmail_list,
+            "error": None,
+            "success": None,
+        },
     )
 
 
@@ -1349,6 +1473,37 @@ async def admin_reject_withdrawal_web(
     await require_admin(request)
     await admin_reject_withdraw(withdrawal_id=withdrawal_id, note=note)
     return RedirectResponse(url="/admin/withdrawals", status_code=302)
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+async def admin_users_page(request: Request):
+    admin = await require_admin(request)
+    users = await admin_user_list()
+    gmail_list = await admin_user_gmail_list()
+    tasks_by_user: Dict[str, List[Dict[str, Any]]] = {}
+    for user in users:
+        tasks_by_user[str(user["user_id"])] = await admin_user_tasks(str(user["user_id"]))
+    return templates.TemplateResponse(
+        "admin_users.html",
+        {
+            "request": request,
+            "admin": admin,
+            "users": users,
+            "gmail_list": gmail_list,
+            "tasks_by_user": tasks_by_user,
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+@app.post("/admin/users/ban")
+async def admin_users_ban(request: Request, user_id: str = Form(...), action: str = Form(...)):
+    await require_admin(request)
+    action = (action or "").strip().lower()
+    banned = action == "ban"
+    await set_user_ban(user_id=user_id, banned=banned)
+    return RedirectResponse(url="/admin/users", status_code=302)
 
 
 # =========================
