@@ -12,7 +12,6 @@
   <style>
     /* --- CSS Variables & Reset --- */
     :root{
-      /* ব্যাকগ্রাউন্ড এখন সাদা হবে কারণ গ্রিড সাদার উপর */
       --bg-body: #ffffff; 
       --card-bg: #ffffff;
       --text-main: #111827;
@@ -37,17 +36,17 @@
       background-color: var(--bg-body);
       color: var(--text-main);
       min-height: 100vh;
-      position: relative; /* গ্রিড পজিশনিংয়ের জন্য */
+      position: relative;
     }
 
-    /* --- ✅ NEW GRID BACKGROUND CSS --- */
+    /* --- GRID BACKGROUND CSS --- */
     .grid-wrapper {
-      position: fixed; /* ফিক্সড রাখা হলো যাতে স্ক্রল করলেও ব্যাকগ্রাউন্ড নড়াচড়া না করে */
+      position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100vh;
-      z-index: -1;   /* কন্টেন্টের নিচে থাকবে */
+      z-index: -1;
       pointer-events: none;
       background-color: #ffffff;
       overflow: hidden;
@@ -59,16 +58,10 @@
       right: 0;
       bottom: 0;
       left: 0;
-      
-      /* গ্রিড লাইন তৈরি */
       background-image: 
           linear-gradient(to right, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
           linear-gradient(to bottom, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
-      
-      /* বক্সের সাইজ */
       background-size: 20px 20px;
-      
-      /* ফেড আউট ইফেক্ট */
       -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
       mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
     }
@@ -84,7 +77,6 @@
       justify-content: space-between; 
       align-items: center; 
       padding: 0 20px; 
-      /* ব্যাকগ্রাউন্ড ট্রান্সপারেন্ট রাখা হলো যাতে গ্রিড দেখা যায়, হালকা ব্লার সহ */
       background: rgba(255,255,255,0.85); 
       backdrop-filter: blur(12px); 
       border-bottom: 1px solid rgba(0,0,0,0.08); 
@@ -136,14 +128,20 @@
       .fb-icon-svg { width: 16px; height: 16px; margin-right: 5px; }
     }
 
-    /* --- MAIN CONTENT & CARD --- */
+    /* --- MAIN CONTENT (Center Logic) --- */
     .main-content {
-      padding-top: 90px; 
-      padding-bottom: 100px; 
+      /* ✅ Vertical Center Fix */
+      min-height: 100vh; /* পুরো স্ক্রিন হাইট নেবে */
+      display: flex;
+      flex-direction: column;
+      justify-content: center; /* মাঝখানে আনবে */
+      align-items: center;
+      
+      /* Navbar-এর জন্য স্পেস ঠিক রাখা */
+      padding-top: 60px; 
+      padding-bottom: 70px;
       padding-left: 20px;
       padding-right: 20px;
-      display: flex;
-      justify-content: center;
     }
 
     .card {
@@ -173,7 +171,6 @@
       line-height: 1.5;
     }
 
-    /* Error Box */
     .error-box {
       background-color: #fef2f2;
       border: 1px solid #fecaca;
@@ -186,8 +183,7 @@
       text-align: center;
     }
 
-    /* Form Styles */
-    .field { margin-bottom: 14px; }
+    .field { margin-bottom: 14px; width: 100%; }
 
     label {
       display: block;
@@ -195,9 +191,10 @@
       font-weight: 500; 
       margin-bottom: 8px;
       color: var(--text-main);
+      text-align: left;
     }
 
-    .input-wrap { position: relative; }
+    .input-wrap { position: relative; width: 100%; }
 
     .input-icon-svg {
       position: absolute;
@@ -229,7 +226,6 @@
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
     }
 
-    /* Checkbox */
     .checkbox-row {
       display: flex;
       align-items: center;
@@ -243,7 +239,6 @@
       width: 18px; height: 18px; accent-color: var(--btn); cursor: pointer;
     }
 
-    /* Buttons & Links */
     .primary-btn {
       width: 100%;
       height: 46px;
@@ -280,7 +275,7 @@
     /* --- BOTTOM NAVBAR --- */
     .bottom-nav {
       position: fixed; bottom: 0; left: 0; width: 100%; height: 70px;
-      background: rgba(255,255,255,0.85); /* হালকা স্বচ্ছ */
+      background: rgba(255,255,255,0.85);
       backdrop-filter: blur(10px);
       border-top: 1px solid rgba(0,0,0,0.1);
       display: flex; justify-content: space-around; align-items: center;
@@ -306,6 +301,7 @@
   <div class="grid-wrapper">
       <div class="grid-background"></div>
   </div>
+
   <div class="top-nav">
     <div class="nav-brand">Earning</div>
     <a href="https://www.facebook.com/YOUR_LINK_HERE" target="_blank" class="fb-btn">
