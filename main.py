@@ -152,6 +152,9 @@ async def db_init() -> None:
             user_id TEXT NOT NULL,
             job_id TEXT NOT NULL,
             job_task_id TEXT NOT NULL,
+            gmail TEXT,
+            gen_password TEXT,
+            recovery_email TEXT,
             status_raw TEXT,
             status_norm TEXT,
             is_final INTEGER DEFAULT 0,
@@ -160,6 +163,12 @@ async def db_init() -> None:
         );
         """
     )
+    if not await _table_has_column("user_tasks", "gmail"):
+        await db_execute("ALTER TABLE user_tasks ADD COLUMN gmail TEXT;")
+    if not await _table_has_column("user_tasks", "gen_password"):
+        await db_execute("ALTER TABLE user_tasks ADD COLUMN gen_password TEXT;")
+    if not await _table_has_column("user_tasks", "recovery_email"):
+        await db_execute("ALTER TABLE user_tasks ADD COLUMN recovery_email TEXT;")
     if not await _table_has_column("user_tasks", "is_final"):
         await db_execute("ALTER TABLE user_tasks ADD COLUMN is_final INTEGER DEFAULT 0;")
     if not await _table_has_column("user_tasks", "status_raw"):
@@ -442,11 +451,21 @@ async def call_upstream_details(task_id: str) -> Dict[str, Any]:
     return data
 
 
-async def upsert_user_task(user_id: str, job_id: str, job_task_id: str) -> None:
+async def upsert_user_task(
+    user_id: str,
+    job_id: str,
+    job_task_id: str,
+    gmail: str,
+    gen_password: str,
+    recovery_email: str,
+) -> None:
     async def _tx(client):
         await client.execute(
-            "INSERT OR IGNORE INTO user_tasks(user_id, job_id, job_task_id) VALUES (?, ?, ?);",
-            (user_id, job_id, job_task_id),
+            """
+            INSERT OR IGNORE INTO user_tasks(user_id, job_id, job_task_id, gmail, gen_password, recovery_email)
+            VALUES (?, ?, ?, ?, ?, ?);
+            """,
+            (user_id, job_id, job_task_id, gmail, gen_password, recovery_email),
         )
 
     await with_write_tx(_tx)
@@ -492,6 +511,19 @@ async def get_non_final_task_ids(user_id: str) -> List[str]:
         (user_id,),
     )
     return [str(r["job_task_id"]) for r in rows]
+
+
+async def get_latest_task_for_gmail(user_id: str, gmail: str) -> Optional[Dict[str, Any]]:
+    return await db_fetchone(
+        """
+        SELECT job_task_id, status_norm, status_raw, is_final, gen_password, recovery_email, created_at
+        FROM user_tasks
+        WHERE user_id=? AND gmail=?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1;
+        """,
+        (user_id, gmail),
+    )
 
 
 async def task_stats(user_id: str) -> Dict[str, int]:
@@ -557,7 +589,7 @@ async def admin_user_list() -> List[Dict[str, Any]]:
 async def admin_user_tasks(user_id: str) -> List[Dict[str, Any]]:
     return await db_fetchall(
         """
-        SELECT job_id, job_task_id, status_raw, status_norm, is_final, last_sync_at, created_at
+        SELECT job_id, job_task_id, gmail, gen_password, recovery_email, status_raw, status_norm, is_final, last_sync_at, created_at
         FROM user_tasks
         WHERE user_id=?
         ORDER BY created_at DESC, id DESC;
@@ -664,14 +696,38 @@ def _rand_digits(n: int) -> str:
     return "".join(digits[x % len(digits)] for x in b)
 
 
-def generate_pretty_password() -> str:
+async def generate_pretty_password() -> str:
     # Example style: behivgusez@1074
-    return f"{_rand_letters(10)}@{_rand_digits(4)}"
+    while True:
+        candidate = f"{_rand_letters(10)}@{_rand_digits(4)}"
+        exists = await db_fetchone(
+            """
+            SELECT 1 FROM user_tasks WHERE gen_password=?
+            UNION
+            SELECT 1 FROM user_drafts WHERE gen_password=?
+            LIMIT 1;
+            """,
+            (candidate, candidate),
+        )
+        if not exists:
+            return candidate
 
 
-def generate_recovery_email() -> str:
+async def generate_recovery_email() -> str:
     # Example style: gopemlixiw155@xneko.xyz
-    return f"{_rand_letters(9)}{_rand_digits(3)}@{RECOVERY_DOMAIN}"
+    while True:
+        candidate = f"{_rand_letters(9)}{_rand_digits(3)}@{RECOVERY_DOMAIN}"
+        exists = await db_fetchone(
+            """
+            SELECT 1 FROM user_tasks WHERE recovery_email=?
+            UNION
+            SELECT 1 FROM user_drafts WHERE recovery_email=?
+            LIMIT 1;
+            """,
+            (candidate, candidate),
+        )
+        if not exists:
+            return candidate
 
 
 async def start_or_reset_draft(user_id: str, gmail: str) -> Dict[str, Any]:
@@ -679,8 +735,19 @@ async def start_or_reset_draft(user_id: str, gmail: str) -> Dict[str, Any]:
     if not gmail or "@" not in gmail:
         raise HTTPException(status_code=400, detail="Valid Gmail is required")
 
-    gen_password = generate_pretty_password()
-    recovery_email = generate_recovery_email()
+    last_task = await get_latest_task_for_gmail(user_id, gmail)
+    if last_task and last_task.get("status_norm") in ("confirmed", "pending", "processing"):
+        raise HTTPException(status_code=400, detail="This Gmail is already submitted or in progress")
+
+    if last_task and last_task.get("status_norm") == "declined":
+        gen_password = last_task.get("gen_password") or ""
+        recovery_email = last_task.get("recovery_email") or ""
+        if not gen_password or not recovery_email:
+            gen_password = await generate_pretty_password()
+            recovery_email = await generate_recovery_email()
+    else:
+        gen_password = await generate_pretty_password()
+        recovery_email = await generate_recovery_email()
 
     async def _tx(client):
         await client.execute(
@@ -1340,6 +1407,19 @@ async def user_gmail_submit(request: Request):
     if not draft:
         return RedirectResponse(url="/user/gmail", status_code=302)
 
+    existing_task = await get_latest_task_for_gmail(user["user_id"], draft.get("gmail") or "")
+    if existing_task and existing_task.get("status_norm") in ("confirmed", "pending", "processing"):
+        return templates.TemplateResponse(
+            "user_gmail.html",
+            {
+                "request": request,
+                "user": user,
+                "draft": draft,
+                "error": "This Gmail is already submitted or in progress",
+                "success": None,
+            },
+        )
+
     try:
         job_proof = format_job_proof(draft)
         data = await call_upstream_submit(job_proof=job_proof)
@@ -1349,7 +1429,14 @@ async def user_gmail_submit(request: Request):
         if not job_task_id:
             raise HTTPException(status_code=502, detail="Upstream missing job_task_id")
 
-        await upsert_user_task(user_id=user["user_id"], job_id=str(job_id), job_task_id=str(job_task_id))
+        await upsert_user_task(
+            user_id=user["user_id"],
+            job_id=str(job_id),
+            job_task_id=str(job_task_id),
+            gmail=str(draft.get("gmail") or ""),
+            gen_password=str(draft.get("gen_password") or ""),
+            recovery_email=str(draft.get("recovery_email") or ""),
+        )
     except HTTPException as e:
         draft = await get_draft(user["user_id"])
         return templates.TemplateResponse(
