@@ -11,7 +11,7 @@ from urllib.parse import urlparse, parse_qs
 
 import numpy as np
 import httpx
-from libsql_client import create_client_sync
+from libsql_client import create_client
 from fastapi import FastAPI, HTTPException, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -47,7 +47,7 @@ templates = Jinja2Templates(directory="templates")
 # =========================
 # DB / Connection
 # =========================
-db_client = create_client_sync(DB_URL, auth_token=DB_TOKEN)
+db_client = create_client(DB_URL, auth_token=DB_TOKEN)
 
 
 def _rows_to_dicts(result) -> List[Dict[str, Any]]:
