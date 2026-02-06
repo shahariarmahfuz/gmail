@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Admin Users</title></head>
+<body>
+  <h2>Admin: User Management</h2>
+  <p>Logged in as: <b>{{ admin.username }}</b> | <a href="/admin">Dashboard</a> | <a href="/admin/logout">Logout</a></p>
+
+  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+  {% if success %}<p style="color:green;">{{ success }}</p>{% endif %}
+
+  <hr>
+
+  <h3>ইউজার তালিকা</h3>
+  <table border="1" cellpadding="6" cellspacing="0">
+    <tr>
+      <th>User</th>
+    </tr>
+    {% for u in users %}
+    <tr>
+      <td><a href="/admin/users/{{ u.user_id }}">{{ u.username }}</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>

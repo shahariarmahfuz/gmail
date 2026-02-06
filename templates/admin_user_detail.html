@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Admin User Detail</title></head>
+<body>
+  <h2>Admin: User Detail</h2>
+  <p>Logged in as: <b>{{ admin.username }}</b> | <a href="/admin">Dashboard</a> | <a href="/admin/users">User List</a> | <a href="/admin/logout">Logout</a></p>
+
+  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+  {% if success %}<p style="color:green;">{{ success }}</p>{% endif %}
+
+  <hr>
+
+  <h3>প্রোফাইল</h3>
+  <div style="border:1px solid #ccc; padding:12px; border-radius:8px;">
+    <b>User:</b> {{ profile.username }} ({{ profile.user_id }})<br>
+    <b>Banned:</b> {{ "Yes" if profile.is_banned else "No" }}<br>
+    <b>Created:</b> {{ profile.created_at }}<br>
+    <b>Gmail:</b> {{ profile.gmail or "N/A" }}<br>
+    <b>Recovery:</b> {{ profile.recovery_email or "N/A" }}<br>
+    <b>Secret:</b> {{ profile.secret or "N/A" }}<br>
+    <b>Draft Created:</b> {{ profile.draft_created_at or "" }}<br>
+    <b>Draft Updated:</b> {{ profile.draft_updated_at or "" }}
+  </div>
+
+  <div style="margin-top:10px;">
+    {% if profile.is_banned %}
+    <form method="post" action="/admin/users/ban">
+      <input type="hidden" name="user_id" value="{{ profile.user_id }}">
+      <input type="hidden" name="action" value="unban">
+      <button type="submit">Unban</button>
+    </form>
+    {% else %}
+    <form method="post" action="/admin/users/ban">
+      <input type="hidden" name="user_id" value="{{ profile.user_id }}">
+      <input type="hidden" name="action" value="ban">
+      <button type="submit">Ban</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <hr>
+
+  <h3>উইথড্র রিকুয়েস্ট</h3>
+  <table border="1" cellpadding="6" cellspacing="0">
+    <tr>
+      <th>ID</th>
+      <th>Amount</th>
+      <th>Status</th>
+      <th>Method</th>
+      <th>Number</th>
+      <th>TXID</th>
+      <th>Note</th>
+      <th>Created</th>
+    </tr>
+    {% for w in withdrawals %}
+    <tr>
+      <td>{{ w.withdrawal_id }}</td>
+      <td>{{ w.amount }}</td>
+      <td>{{ w.status }}</td>
+      <td>{{ w.method }}</td>
+      <td>{{ w.number }}</td>
+      <td>{{ w.admin_txid or "" }}</td>
+      <td>{{ w.admin_note or "" }}</td>
+      <td>{{ w.created_at }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="8">No withdrawals found.</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <hr>
+
+  <h3>টাস্ক ডিটেইলস</h3>
+  <table border="1" cellpadding="6" cellspacing="0" style="width:100%;">
+    <tr>
+      <th>Job ID</th>
+      <th>Task ID</th>
+      <th>Status Raw</th>
+      <th>Status Norm</th>
+      <th>Final</th>
+      <th>Last Sync</th>
+      <th>Created</th>
+    </tr>
+    {% for t in tasks %}
+    <tr>
+      <td>{{ t.job_id }}</td>
+      <td>{{ t.job_task_id }}</td>
+      <td>{{ t.status_raw or "" }}</td>
+      <td>{{ t.status_norm or "" }}</td>
+      <td>{{ "Yes" if t.is_final else "No" }}</td>
+      <td>{{ t.last_sync_at or "" }}</td>
+      <td>{{ t.created_at }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="7">No tasks found.</td>
+    </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>
