@@ -1251,7 +1251,12 @@ def login_page(request: Request):
 
 
 @app.post("/login")
-async def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    remember_me: Optional[str] = Form(None),
+):
     username = username.strip().lower()
     u = await get_user_by_username(username)
     if not u or not verify_password(password, u["password_hash"]):
@@ -1261,7 +1266,8 @@ async def login_submit(request: Request, username: str = Form(...), password: st
 
     sid = await create_session("user", u["user_id"])
     resp = RedirectResponse(url="/user/dashboard", status_code=302)
-    resp.set_cookie(SESSION_COOKIE, sid, httponly=True, samesite="lax")
+    max_age = 30 * 24 * 60 * 60 if remember_me else None
+    resp.set_cookie(SESSION_COOKIE, sid, httponly=True, samesite="lax", max_age=max_age)
     return resp
 
 
