@@ -92,15 +92,8 @@ async def with_write_tx(fn):
     attempts = 5
     for i in range(attempts):
         try:
-            await db_execute("BEGIN;")
-            result = await fn(db_client)
-            await db_execute("COMMIT;")
-            return result
+            return await fn(db_client)
         except Exception as e:
-            try:
-                await db_execute("ROLLBACK;")
-            except Exception:
-                pass
             msg = str(e).lower()
             if "database is locked" in msg or "locked" in msg:
                 if i < attempts - 1:
