@@ -1141,7 +1141,18 @@ async def sync_user_tasks(user_id: str) -> None:
 # Web Pages
 # =========================
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request):
+async def home(request: Request):
+    sid = request.cookies.get(SESSION_COOKIE)
+    if sid:
+        session = await get_session(sid)
+        if session and session.get("kind") == "user":
+            user = await get_user_by_id(session.get("principal_id"))
+            if user:
+                return RedirectResponse(url="/user/dashboard", status_code=302)
+        if session and session.get("kind") == "admin":
+            admin = await get_admin_by_id(session.get("principal_id"))
+            if admin:
+                return RedirectResponse(url="/admin", status_code=302)
     return templates.TemplateResponse("home.html", {"request": request})
 
 
