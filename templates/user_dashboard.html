@@ -1,29 +1,29 @@
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>User Dashboard</title></head>
-<body>
-  <h2>User Dashboard</h2>
-  <p>Logged in as: <b>{{ user.username }}</b></p>
+{% extends "base.html" %}
+{% block content %}
+  <h1>User Dashboard</h1>
+  <div class="card">
+    <p class="muted">Logged in as: <b>{{ user.username }}</b> | <a href="/logout">Logout</a></p>
+  </div>
 
-  {% include "_user_nav.html" %}
+  <div class="card">
+    <h3>Task Summary</h3>
+    <ul style="margin-top:10px; padding-left:18px;">
+      <li>Total Submitted: <b>{{ stats.total }}</b></li>
+      <li>Successful (Confirmed): <b>{{ stats.confirmed }}</b></li>
+      <li>Rejected (Declined): <b>{{ stats.declined }}</b></li>
+      <li>Processing: <b>{{ stats.processing }}</b></li>
+      <li>Pending: <b>{{ stats.pending }}</b></li>
+    </ul>
+  </div>
 
-  <h3>Task Summary</h3>
-  <ul>
-    <li>Total Submitted: <b>{{ stats.total }}</b></li>
-    <li>Successful (Confirmed): <b>{{ stats.confirmed }}</b></li>
-    <li>Rejected (Declined): <b>{{ stats.declined }}</b></li>
-    <li>Processing: <b>{{ stats.processing }}</b></li>
-    <li>Pending: <b>{{ stats.pending }}</b></li>
-  </ul>
-
-  <h3>Balances</h3>
-  <ul>
-    <li>Available: <b>{{ balances.available_balance }}</b></li>
-    <li>Hold: <b>{{ balances.hold_balance }}</b></li>
-    <li>Reserved Withdraw: <b>{{ balances.reserved_withdraw_balance }}</b></li>
-    <li>Total Earned: {{ balances.total_earned }}</li>
-    <li>Total Withdrawn: {{ balances.total_withdrawn }}</li>
-  </ul>
-
-</body>
-</html>
+  <div class="card">
+    <h3>Balances</h3>
+    <ul style="margin-top:10px; padding-left:18px;">
+      <li>Available: <b>{{ balances.available_balance }}</b></li>
+      <li>Hold: <b>{{ balances.hold_balance }}</b></li>
+      <li>Reserved Withdraw: <b>{{ balances.reserved_withdraw_balance }}</b></li>
+      <li>Total Earned: {{ balances.total_earned }}</li>
+      <li>Total Withdrawn: {{ balances.total_withdrawn }}</li>
+    </ul>
+  </div>
+{% endblock %}

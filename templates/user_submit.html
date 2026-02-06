@@ -1,21 +1,12 @@
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Submit Job Proof</title></head>
-<body>
-  <h2>Submit Job Proof</h2>
-  <p>Logged in as: <b>{{ user.username }}</b></p>
-
-  {% include "_user_nav.html" %}
-
-  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
-
-  <form method="post" action="/user/submit">
-    <div>
-      <label>Job Proof</label><br>
-      <textarea name="job_proof" rows="4" cols="70" required></textarea>
-    </div>
-    <button type="submit">Submit</button>
-  </form>
-
-</body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+  <h1>Submit Job Proof</h1>
+  <div class="card">
+    <p class="muted">Logged in as: <b>{{ user.username }}</b> | <a href="/logout">Logout</a></p>
+    {% if error %}<p style="color:red; margin-top:10px;">{{ error }}</p>{% endif %}
+    <form method="post" action="/user/submit" class="input-group" style="flex-direction:column; gap:12px;">
+      <textarea class="email-input" name="job_proof" rows="4" placeholder="Job Proof" required></textarea>
+      <button class="submit-btn" type="submit">Submit</button>
+    </form>
+  </div>
+{% endblock %}

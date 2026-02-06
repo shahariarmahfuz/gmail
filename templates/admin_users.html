@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Admin: User Management</h1>
+  <div class="card">
+    <p class="muted">Logged in as: <b>{{ admin.username }}</b> | <a href="/admin">Dashboard</a> | <a href="/admin/logout">Logout</a></p>
+
+    {% if error %}<p style="color:red; margin-top:10px;">{{ error }}</p>{% endif %}
+    {% if success %}<p style="color:green; margin-top:10px;">{{ success }}</p>{% endif %}
+
+    <h3 style="margin-top:16px;">ইউজার তালিকা</h3>
+    <table border="1" cellpadding="6" cellspacing="0" style="margin-top:8px; width:100%;">
+      <tr>
+        <th>User</th>
+      </tr>
+      {% for u in users %}
+      <tr>
+        <td><a href="/admin/users/{{ u.user_id }}">{{ u.username }}</a></td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+{% endblock %}

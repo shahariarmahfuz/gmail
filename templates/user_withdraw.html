@@ -1,60 +1,48 @@
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Withdraw</title></head>
-<body>
-  <h2>Withdraw</h2>
-  <p>Logged in as: <b>{{ user.username }}</b></p>
+{% extends "base.html" %}
+{% block content %}
+  <h1>Withdraw</h1>
+  <div class="card">
+    <p class="muted">Logged in as: <b>{{ user.username }}</b> | <a href="/logout">Logout</a></p>
+    <p style="margin-top:10px;">Available Balance: <b>{{ balances.available_balance }}</b></p>
+    <p>Reserved Withdraw: <b>{{ balances.reserved_withdraw_balance }}</b></p>
+    {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+  </div>
 
-  {% include "_user_nav.html" %}
+  <div class="card">
+    <h3>Request Withdraw</h3>
+    <form method="post" action="/user/withdraw" class="input-group" style="flex-direction:column; gap:12px;">
+      <input class="email-input" name="amount" type="number" min="1" placeholder="Amount" required>
+      <input class="email-input" name="method" placeholder="Method (bkash/rocket/nagad/bank)" required>
+      <input class="email-input" name="number" placeholder="Number/Account" required>
+      <button class="submit-btn" type="submit">Request Withdraw</button>
+    </form>
+  </div>
 
-  <p>Available Balance: <b>{{ balances.available_balance }}</b></p>
-  <p>Reserved Withdraw: <b>{{ balances.reserved_withdraw_balance }}</b></p>
-  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
-
-  <h3>Request Withdraw</h3>
-  <form method="post" action="/user/withdraw">
-    <div>
-      <label>Amount</label><br>
-      <input name="amount" type="number" min="1" required>
-    </div>
-    <div>
-      <label>Method (bkash/rocket/nagad/bank)</label><br>
-      <input name="method" required>
-    </div>
-    <div>
-      <label>Number/Account</label><br>
-      <input name="number" required>
-    </div>
-    <button type="submit">Request Withdraw</button>
-  </form>
-
-  <hr>
-
-  <h3>My Withdrawals</h3>
-  <table border="1" cellpadding="6" cellspacing="0">
-    <tr>
-      <th>Withdrawal ID</th>
-      <th>Amount</th>
-      <th>Status</th>
-      <th>Method</th>
-      <th>Number</th>
-      <th>TXID</th>
-      <th>Note</th>
-      <th>Created</th>
-    </tr>
-    {% for w in withdrawals %}
-    <tr>
-      <td>{{ w.withdrawal_id }}</td>
-      <td>{{ w.amount }}</td>
-      <td>{{ w.status }}</td>
-      <td>{{ w.method }}</td>
-      <td>{{ w.number }}</td>
-      <td>{{ w.admin_txid or "" }}</td>
-      <td>{{ w.admin_note or "" }}</td>
-      <td>{{ w.created_at }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-
-</body>
-</html>
+  <div class="card">
+    <h3>My Withdrawals</h3>
+    <table border="1" cellpadding="6" cellspacing="0" style="width:100%; margin-top:8px;">
+      <tr>
+        <th>Withdrawal ID</th>
+        <th>Amount</th>
+        <th>Status</th>
+        <th>Method</th>
+        <th>Number</th>
+        <th>TXID</th>
+        <th>Note</th>
+        <th>Created</th>
+      </tr>
+      {% for w in withdrawals %}
+      <tr>
+        <td>{{ w.withdrawal_id }}</td>
+        <td>{{ w.amount }}</td>
+        <td>{{ w.status }}</td>
+        <td>{{ w.method }}</td>
+        <td>{{ w.number }}</td>
+        <td>{{ w.admin_txid or "" }}</td>
+        <td>{{ w.admin_note or "" }}</td>
+        <td>{{ w.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+{% endblock %}

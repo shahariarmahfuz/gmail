@@ -1,15 +1,21 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Home</title>
-</head>
-<body>
-  <h2>Welcome</h2>
-  <ul>
-    <li><a href="/signup">User Signup</a></li>
-    <li><a href="/login">User Login</a></li>
-    <li><a href="/admin/login">Admin Login</a></li>
-  </ul>
-</body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+  <div class="beta-badge" role="status">
+      <span class="beta-badge__dot"></span>
+      <span class="beta-badge__text">Hot Offer</span>
+  </div>
+
+  <h1>
+      Drop Your Gmail <br>
+      <span class="lava-text">And Earn Money</span>
+  </h1>
+
+  <div class="card" style="text-align:center;">
+      <p class="muted">Get started by creating an account or logging in.</p>
+      <div style="margin-top:16px;">
+          <a href="/signup" class="submit-btn" style="text-decoration:none; display:inline-block;">Signup</a>
+          <a href="/login" class="submit-btn" style="text-decoration:none; display:inline-block; margin-left:10px;">Login</a>
+          <a href="/admin/login" class="submit-btn" style="text-decoration:none; display:inline-block; margin-left:10px;">Admin Login</a>
+      </div>
+  </div>
+{% endblock %}
