@@ -1,21 +1,62 @@
-{% extends "base.html" %}
-{% block content %}
-  <div class="beta-badge" role="status">
-      <span class="beta-badge__dot"></span>
-      <span class="beta-badge__text">Hot Offer</span>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Earning</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0; padding:0; box-sizing:border-box; font-family:'Raleway', sans-serif; background:#ffffff; color:#1e293b; min-height:100vh;">
+  <div style="position:fixed; top:0; left:0; width:100%; height:60px; display:flex; justify-content:space-between; align-items:center; padding:0 30px; background:rgba(255,255,255,0.9); backdrop-filter:blur(12px); border-bottom:1px solid rgba(0,0,0,0.08); box-shadow:0 4px 6px -1px rgba(0,0,0,0.03); z-index:100;">
+    <div style="font-size:18px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:1px;">Earning</div>
+    <a href="https://www.facebook.com/YOUR_LINK_HERE" target="_blank" style="display:flex; align-items:center; text-decoration:none; color:#0f172a; padding:6px 14px; background:rgba(0,0,0,0.04); border-radius:30px;">
+      <svg style="width:20px; height:20px; color:#1877F2; margin-right:10px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+      </svg>
+      <span style="font-size:14px; font-weight:700; white-space:nowrap;">Mahfuz Ahmed</span>
+    </a>
   </div>
 
-  <h1>
+  <main style="padding-top:110px; max-width:900px; margin:0 auto; padding-left:20px; padding-right:20px; padding-bottom:100px; display:flex; flex-direction:column; align-items:center; text-align:center;">
+    <div style="display:inline-flex; align-items:center; gap:8px; padding:5px 12px; border:1px solid #cbd5e1; background:rgba(255,255,255,0.95); margin-bottom:25px;">
+      <span style="width:6px; height:6px; background:#f97316; transform:rotate(45deg); display:inline-block;"></span>
+      <span style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px; color:#64748b;">Hot Offer</span>
+    </div>
+
+    <h1 style="font-size:3.5rem; font-weight:800; margin-bottom:35px; color:#0f172a; line-height:1.1; letter-spacing:-1px;">
       Drop Your Gmail <br>
-      <span class="lava-text">And Earn Money</span>
-  </h1>
+      <span style="background:linear-gradient(to right, #f59e0b, #ef4444, #db2777); -webkit-background-clip:text; color:transparent;">And Earn Money</span>
+    </h1>
 
-  <div class="card" style="text-align:center;">
-      <p class="muted">Get started by creating an account or logging in.</p>
+    <div style="width:100%; background:#fff; border:1px solid #e2e8f0; padding:20px; text-align:center;">
+      <p style="color:#64748b; margin:0;">Get started by creating an account or logging in.</p>
       <div style="margin-top:16px;">
-          <a href="/signup" class="submit-btn" style="text-decoration:none; display:inline-block;">Signup</a>
-          <a href="/login" class="submit-btn" style="text-decoration:none; display:inline-block; margin-left:10px;">Login</a>
-          <a href="/admin/login" class="submit-btn" style="text-decoration:none; display:inline-block; margin-left:10px;">Admin Login</a>
+        <a href="/signup" style="text-decoration:none; display:inline-block; padding:16px 32px; font-size:16px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#fff; background:linear-gradient(to right, #f59e0b, #ef4444); border:none;">Signup</a>
+        <a href="/login" style="text-decoration:none; display:inline-block; margin-left:10px; padding:16px 32px; font-size:16px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#fff; background:linear-gradient(to right, #f59e0b, #ef4444);">Login</a>
+        <a href="/admin/login" style="text-decoration:none; display:inline-block; margin-left:10px; padding:16px 32px; font-size:16px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#fff; background:linear-gradient(to right, #f59e0b, #ef4444);">Admin Login</a>
       </div>
-  </div>
-{% endblock %}
+    </div>
+  </main>
+
+  <nav style="position:fixed; bottom:0; left:0; width:100%; height:70px; background:rgba(255,255,255,0.98); backdrop-filter:blur(10px); border-top:1px solid rgba(0,0,0,0.1); display:flex; justify-content:space-around; align-items:center; padding:0 10px;">
+    <a href="/" style="display:flex; flex-direction:column; align-items:center; text-decoration:none; color:#0f172a; width:25%;">
+      <svg style="width:24px; height:24px; margin-bottom:4px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>
+      <span style="font-size:11px; font-weight:600;">Home</span>
+    </a>
+    <a href="/user/gmail" style="display:flex; flex-direction:column; align-items:center; text-decoration:none; color:#64748b; width:25%;">
+      <svg style="width:24px; height:24px; margin-bottom:4px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#4caf50" d="M45,16.2l-5,2.75l-5,4.75L35,40h7c1.657,0,3-1.343,3-3V16.2z"></path><path fill="#1e88e5" d="M3,16.2l3.614,1.71L13,23.7V40H6c-1.657,0-3-1.343-3-3V16.2z"></path><polygon fill="#e53935" points="35,11.2 24,19.45 13,11.2 12,17 13,23.7 24,31.95 35,23.7 36,17"></polygon><path fill="#c62828" d="M3,12.298V16.2l10,7.5V11.2L9.876,8.859C9.132,8.301,8.228,8,7.298,8h0C4.924,8,3,9.924,3,12.298z"></path><path fill="#fbc02d" d="M45,12.298V16.2l-10,7.5V11.2l3.124-2.341C38.868,8.301,39.772,8,40.702,8h0 C43.076,8,45,9.924,45,12.298z"></path></svg>
+      <span style="font-size:11px; font-weight:600;">Submit</span>
+    </a>
+    <a href="/user/tasks" style="display:flex; flex-direction:column; align-items:center; text-decoration:none; color:#64748b; width:25%;">
+      <svg style="width:24px; height:24px; margin-bottom:4px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 1.414 1.146 2.56 2.56 2.56 1.415 0 2.56-1.146 2.56-2.56a2.573 2.573 0 00-.1-.664m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" /></svg>
+      <span style="font-size:11px; font-weight:600;">Tasks</span>
+    </a>
+    <a href="/user/withdraw" style="display:flex; flex-direction:column; align-items:center; text-decoration:none; color:#64748b; width:25%;">
+      <svg style="width:24px; height:24px; margin-bottom:4px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" /></svg>
+      <span style="font-size:11px; font-weight:600;">Withdraw</span>
+    </a>
+  </nav>
+</body>
+</html>

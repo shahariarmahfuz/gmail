@@ -1,100 +1,119 @@
-{% extends "base.html" %}
-{% block content %}
-  <h1>Admin: User Detail</h1>
-  <div class="card">
-    <p class="muted">Logged in as: <b>{{ admin.username }}</b> | <a href="/admin">Dashboard</a> | <a href="/admin/users">User List</a> | <a href="/admin/logout">Logout</a></p>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin User Detail</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0; padding:0; box-sizing:border-box; font-family:'Raleway', sans-serif; background:#ffffff; color:#1e293b; min-height:100vh;">
+  <div style="position:fixed; top:0; left:0; width:100%; height:60px; display:flex; justify-content:space-between; align-items:center; padding:0 30px; background:rgba(255,255,255,0.9); backdrop-filter:blur(12px); border-bottom:1px solid rgba(0,0,0,0.08); box-shadow:0 4px 6px -1px rgba(0,0,0,0.03); z-index:100;">
+    <div style="font-size:18px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:1px;">Earning</div>
+    <a href="https://www.facebook.com/YOUR_LINK_HERE" target="_blank" style="display:flex; align-items:center; text-decoration:none; color:#0f172a; padding:6px 14px; background:rgba(0,0,0,0.04); border-radius:30px;">
+      <svg style="width:20px; height:20px; color:#1877F2; margin-right:10px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+      </svg>
+      <span style="font-size:14px; font-weight:700; white-space:nowrap;">Mahfuz Ahmed</span>
+    </a>
+  </div>
 
-    {% if error %}<p style="color:red; margin-top:10px;">{{ error }}</p>{% endif %}
-    {% if success %}<p style="color:green; margin-top:10px;">{{ success }}</p>{% endif %}
-
-    <h3 style="margin-top:16px;">প্রোফাইল</h3>
-    <div style="border:1px solid #e2e8f0; padding:12px; border-radius:0;">
-      <b>User:</b> {{ profile.username }} ({{ profile.user_id }})<br>
-      <b>Banned:</b> {{ "Yes" if profile.is_banned else "No" }}<br>
-      <b>Created:</b> {{ profile.created_at }}<br>
-      <b>Gmail:</b> {{ profile.gmail or "N/A" }}<br>
-      <b>Recovery:</b> {{ profile.recovery_email or "N/A" }}<br>
-      <b>Secret:</b> {{ profile.secret or "N/A" }}<br>
-      <b>Draft Created:</b> {{ profile.draft_created_at or "" }}<br>
-      <b>Draft Updated:</b> {{ profile.draft_updated_at or "" }}
+  <main style="padding-top:110px; max-width:900px; margin:0 auto; padding-left:20px; padding-right:20px; padding-bottom:100px;">
+    <h1 style="font-size:2.5rem; font-weight:800; margin-bottom:20px; color:#0f172a;">Admin: User Detail</h1>
+    <div style="width:100%; background:#fff; border:1px solid #e2e8f0; padding:20px; margin-bottom:16px;">
+      <p style="color:#64748b; margin:0;">Logged in as: <b>{{ admin.username }}</b> | <a href="/admin">Dashboard</a> | <a href="/admin/users">User List</a> | <a href="/admin/logout">Logout</a></p>
+      {% if error %}<p style="color:red; margin-top:10px;">{{ error }}</p>{% endif %}
+      {% if success %}<p style="color:green; margin-top:10px;">{{ success }}</p>{% endif %}
+      <h3 style="margin-top:16px;">প্রোফাইল</h3>
+      <div style="border:1px solid #e2e8f0; padding:12px;">
+        <b>User:</b> {{ profile.username }} ({{ profile.user_id }})<br>
+        <b>Banned:</b> {{ "Yes" if profile.is_banned else "No" }}<br>
+        <b>Created:</b> {{ profile.created_at }}<br>
+        <b>Gmail:</b> {{ profile.gmail or "N/A" }}<br>
+        <b>Recovery:</b> {{ profile.recovery_email or "N/A" }}<br>
+        <b>Secret:</b> {{ profile.secret or "N/A" }}<br>
+        <b>Draft Created:</b> {{ profile.draft_created_at or "" }}<br>
+        <b>Draft Updated:</b> {{ profile.draft_updated_at or "" }}
+      </div>
+      <div style="margin-top:10px;">
+        {% if profile.is_banned %}
+        <form method="post" action="/admin/users/ban">
+          <input type="hidden" name="user_id" value="{{ profile.user_id }}">
+          <input type="hidden" name="action" value="unban">
+          <button type="submit" style="padding:12px 20px; font-weight:700; color:#fff; background:linear-gradient(to right, #f59e0b, #ef4444); border:none;">Unban</button>
+        </form>
+        {% else %}
+        <form method="post" action="/admin/users/ban">
+          <input type="hidden" name="user_id" value="{{ profile.user_id }}">
+          <input type="hidden" name="action" value="ban">
+          <button type="submit" style="padding:12px 20px; font-weight:700; color:#fff; background:linear-gradient(to right, #f59e0b, #ef4444); border:none;">Ban</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
 
-    <div style="margin-top:10px;">
-      {% if profile.is_banned %}
-      <form method="post" action="/admin/users/ban">
-        <input type="hidden" name="user_id" value="{{ profile.user_id }}">
-        <input type="hidden" name="action" value="unban">
-        <button class="submit-btn" type="submit">Unban</button>
-      </form>
-      {% else %}
-      <form method="post" action="/admin/users/ban">
-        <input type="hidden" name="user_id" value="{{ profile.user_id }}">
-        <input type="hidden" name="action" value="ban">
-        <button class="submit-btn" type="submit">Ban</button>
-      </form>
-      {% endif %}
+    <div style="width:100%; background:#fff; border:1px solid #e2e8f0; padding:20px; margin-bottom:16px;">
+      <h3>উইথড্র রিকুয়েস্ট</h3>
+      <table border="1" cellpadding="6" cellspacing="0" style="width:100%; margin-top:8px;">
+        <tr>
+          <th>ID</th>
+          <th>Amount</th>
+          <th>Status</th>
+          <th>Method</th>
+          <th>Number</th>
+          <th>TXID</th>
+          <th>Note</th>
+          <th>Created</th>
+        </tr>
+        {% for w in withdrawals %}
+        <tr>
+          <td>{{ w.withdrawal_id }}</td>
+          <td>{{ w.amount }}</td>
+          <td>{{ w.status }}</td>
+          <td>{{ w.method }}</td>
+          <td>{{ w.number }}</td>
+          <td>{{ w.admin_txid or "" }}</td>
+          <td>{{ w.admin_note or "" }}</td>
+          <td>{{ w.created_at }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8">No withdrawals found.</td>
+        </tr>
+        {% endfor %}
+      </table>
     </div>
-  </div>
 
-  <div class="card">
-    <h3>উইথড্র রিকুয়েস্ট</h3>
-    <table border="1" cellpadding="6" cellspacing="0" style="width:100%; margin-top:8px;">
-      <tr>
-        <th>ID</th>
-        <th>Amount</th>
-        <th>Status</th>
-        <th>Method</th>
-        <th>Number</th>
-        <th>TXID</th>
-        <th>Note</th>
-        <th>Created</th>
-      </tr>
-      {% for w in withdrawals %}
-      <tr>
-        <td>{{ w.withdrawal_id }}</td>
-        <td>{{ w.amount }}</td>
-        <td>{{ w.status }}</td>
-        <td>{{ w.method }}</td>
-        <td>{{ w.number }}</td>
-        <td>{{ w.admin_txid or "" }}</td>
-        <td>{{ w.admin_note or "" }}</td>
-        <td>{{ w.created_at }}</td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="8">No withdrawals found.</td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-
-  <div class="card">
-    <h3>টাস্ক ডিটেইলস</h3>
-    <table border="1" cellpadding="6" cellspacing="0" style="width:100%; margin-top:8px;">
-      <tr>
-        <th>Job ID</th>
-        <th>Task ID</th>
-        <th>Status Raw</th>
-        <th>Status Norm</th>
-        <th>Final</th>
-        <th>Last Sync</th>
-        <th>Created</th>
-      </tr>
-      {% for t in tasks %}
-      <tr>
-        <td>{{ t.job_id }}</td>
-        <td>{{ t.job_task_id }}</td>
-        <td>{{ t.status_raw or "" }}</td>
-        <td>{{ t.status_norm or "" }}</td>
-        <td>{{ "Yes" if t.is_final else "No" }}</td>
-        <td>{{ t.last_sync_at or "" }}</td>
-        <td>{{ t.created_at }}</td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="7">No tasks found.</td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-{% endblock %}
+    <div style="width:100%; background:#fff; border:1px solid #e2e8f0; padding:20px;">
+      <h3>টাস্ক ডিটেইলস</h3>
+      <table border="1" cellpadding="6" cellspacing="0" style="width:100%; margin-top:8px;">
+        <tr>
+          <th>Job ID</th>
+          <th>Task ID</th>
+          <th>Status Raw</th>
+          <th>Status Norm</th>
+          <th>Final</th>
+          <th>Last Sync</th>
+          <th>Created</th>
+        </tr>
+        {% for t in tasks %}
+        <tr>
+          <td>{{ t.job_id }}</td>
+          <td>{{ t.job_task_id }}</td>
+          <td>{{ t.status_raw or "" }}</td>
+          <td>{{ t.status_norm or "" }}</td>
+          <td>{{ "Yes" if t.is_final else "No" }}</td>
+          <td>{{ t.last_sync_at or "" }}</td>
+          <td>{{ t.created_at }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7">No tasks found.</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </main>
+</body>
+</html>
