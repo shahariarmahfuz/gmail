@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Admin Credit</title></head>
+<body>
+  <h2>Admin: Add Balance</h2>
+  <p>Logged in as: <b>{{ admin.username }}</b> | <a href="/admin">Dashboard</a> | <a href="/admin/logout">Logout</a></p>
+
+  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+  {% if success %}<p style="color:green;">{{ success }}</p>{% endif %}
+
+  <hr>
+
+  <h3>ইউজার ব্যালেন্স এড করুন (Username দিয়ে)</h3>
+  <form method="post" action="/admin/credit">
+    <div>
+      <label>Username</label><br>
+      <input name="target_username" required>
+    </div>
+    <div>
+      <label>Amount</label><br>
+      <input name="amount" type="number" min="1" required>
+    </div>
+    <div>
+      <label>Note</label><br>
+      <input name="note">
+    </div>
+    <button type="submit">Add Credit</button>
+  </form>
+</body>
+</html>
