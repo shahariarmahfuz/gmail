@@ -566,6 +566,38 @@ async def admin_user_tasks(user_id: str) -> List[Dict[str, Any]]:
     )
 
 
+async def admin_user_profile(user_id: str) -> Optional[Dict[str, Any]]:
+    return await db_fetchone(
+        """
+        SELECT u.user_id,
+               u.username,
+               u.is_banned,
+               u.created_at,
+               d.gmail,
+               d.recovery_email,
+               d.secret,
+               d.created_at AS draft_created_at,
+               d.updated_at AS draft_updated_at
+        FROM users u
+        LEFT JOIN user_drafts d ON d.user_id = u.user_id
+        WHERE u.user_id=?;
+        """,
+        (user_id,),
+    )
+
+
+async def admin_user_withdrawals(user_id: str) -> List[Dict[str, Any]]:
+    return await db_fetchall(
+        """
+        SELECT withdrawal_id, amount, status, method, number, admin_txid, admin_note, created_at, updated_at, paid_at
+        FROM withdrawals
+        WHERE user_id=?
+        ORDER BY created_at DESC;
+        """,
+        (user_id,),
+    )
+
+
 async def admin_user_gmail_list() -> List[Dict[str, Any]]:
     return await db_fetchall(
         """
@@ -1438,14 +1470,12 @@ async def admin_add_credit(
 async def admin_withdrawals_page(request: Request):
     admin = await require_admin(request)
     w_all = await admin_withdrawals_overview(status=None)
-    gmail_list = await admin_user_gmail_list()
     return templates.TemplateResponse(
         "admin_withdrawals.html",
         {
             "request": request,
             "admin": admin,
             "withdrawals": w_all,
-            "gmail_list": gmail_list,
             "error": None,
             "success": None,
         },
@@ -1479,18 +1509,12 @@ async def admin_reject_withdrawal_web(
 async def admin_users_page(request: Request):
     admin = await require_admin(request)
     users = await admin_user_list()
-    gmail_list = await admin_user_gmail_list()
-    tasks_by_user: Dict[str, List[Dict[str, Any]]] = {}
-    for user in users:
-        tasks_by_user[str(user["user_id"])] = await admin_user_tasks(str(user["user_id"]))
     return templates.TemplateResponse(
         "admin_users.html",
         {
             "request": request,
             "admin": admin,
             "users": users,
-            "gmail_list": gmail_list,
-            "tasks_by_user": tasks_by_user,
             "error": None,
             "success": None,
         },
@@ -1504,6 +1528,28 @@ async def admin_users_ban(request: Request, user_id: str = Form(...), action: st
     banned = action == "ban"
     await set_user_ban(user_id=user_id, banned=banned)
     return RedirectResponse(url="/admin/users", status_code=302)
+
+
+@app.get("/admin/users/{user_id}", response_class=HTMLResponse)
+async def admin_user_detail_page(request: Request, user_id: str):
+    admin = await require_admin(request)
+    profile = await admin_user_profile(user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+    tasks = await admin_user_tasks(user_id)
+    withdrawals = await admin_user_withdrawals(user_id)
+    return templates.TemplateResponse(
+        "admin_user_detail.html",
+        {
+            "request": request,
+            "admin": admin,
+            "profile": profile,
+            "tasks": tasks,
+            "withdrawals": withdrawals,
+            "error": None,
+            "success": None,
+        },
+    )
 
 
 # =========================

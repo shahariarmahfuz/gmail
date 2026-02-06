@@ -16,10 +16,7 @@
     <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
       <div>
         <b>রিকুয়েস্ট আইডি:</b> {{ w.withdrawal_id }}<br>
-        <b>ইউজার:</b> {{ w.username }} ({{ w.user_id }})<br>
-        <b>ব্যান:</b> {{ "Yes" if w.is_banned else "No" }}<br>
-        <b>জিমেইল:</b> {{ w.gmail or "N/A" }}<br>
-        <b>রিকভারি:</b> {{ w.recovery_email or "N/A" }}
+        <b>ইউজার:</b> <a href="/admin/users/{{ w.user_id }}">{{ w.username }}</a><br>
       </div>
       <div>
         <b>অ্যামাউন্ট:</b> {{ w.amount }}<br>
@@ -29,6 +26,9 @@
         <b>TXID:</b> {{ w.admin_txid or "" }}<br>
         <b>নোট:</b> {{ w.admin_note or "" }}
       </div>
+    </div>
+    <div style="margin-top:10px;">
+      <a href="/admin/users/{{ w.user_id }}">প্রোফাইল দেখুন</a>
     </div>
     <div style="margin-top:10px;">
       {% if w.status == "pending" %}
@@ -52,30 +52,5 @@
   <p>কোনো রিকুয়েস্ট নেই।</p>
   {% endfor %}
 
-  <hr>
-
-  <h3>সকল জিমেইল ও স্ট্যাটাস</h3>
-  <table border="1" cellpadding="6" cellspacing="0">
-    <tr>
-      <th>User</th>
-      <th>Gmail</th>
-      <th>Recovery</th>
-      <th>Confirmed</th>
-      <th>Pending</th>
-      <th>Processing</th>
-      <th>Declined</th>
-    </tr>
-    {% for g in gmail_list %}
-    <tr>
-      <td>{{ g.username }} ({{ g.user_id }})</td>
-      <td>{{ g.gmail or "N/A" }}</td>
-      <td>{{ g.recovery_email or "N/A" }}</td>
-      <td>{{ g.confirmed_count }}</td>
-      <td>{{ g.pending_count }}</td>
-      <td>{{ g.processing_count }}</td>
-      <td>{{ g.declined_count }}</td>
-    </tr>
-    {% endfor %}
-  </table>
 </body>
 </html>
