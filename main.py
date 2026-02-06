@@ -556,6 +556,25 @@ def task_stats(user_id: str) -> Dict[str, int]:
         conn.close()
 
 
+def admin_overview_stats() -> Dict[str, int]:
+    conn = db_connect()
+    try:
+        total_users = conn.execute("SELECT COALESCE(COUNT(*),0) AS c FROM users;").fetchone()["c"]
+        total_tasks = conn.execute("SELECT COALESCE(COUNT(*),0) AS c FROM user_tasks;").fetchone()["c"]
+        total_withdrawals = conn.execute("SELECT COALESCE(COUNT(*),0) AS c FROM withdrawals;").fetchone()["c"]
+        pending_withdrawals = conn.execute(
+            "SELECT COALESCE(COUNT(*),0) AS c FROM withdrawals WHERE status='pending';"
+        ).fetchone()["c"]
+        return {
+            "total_users": int(total_users),
+            "total_tasks": int(total_tasks),
+            "total_withdrawals": int(total_withdrawals),
+            "pending_withdrawals": int(pending_withdrawals),
+        }
+    finally:
+        conn.close()
+
+
 # =========================
 # Draft helpers (gmail/password/recovery/secret)
 # =========================
@@ -1273,25 +1292,32 @@ async def user_tasks_page(request: Request):
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
     admin = require_admin(request)
-    w_all = list_all_withdrawals(status=None)
     return templates.TemplateResponse(
         "admin_dashboard.html",
-        {"request": request, "admin": admin, "withdrawals": w_all, "error": None, "success": None},
+        {"request": request, "admin": admin, "stats": admin_overview_stats()},
+    )
+
+
+@app.get("/admin/credit", response_class=HTMLResponse)
+def admin_credit_page(request: Request):
+    admin = require_admin(request)
+    return templates.TemplateResponse(
+        "admin_credit.html",
+        {"request": request, "admin": admin, "error": None, "success": None},
     )
 
 
 @app.post("/admin/credit")
 def admin_add_credit(request: Request, target_username: str = Form(...), amount: int = Form(...), note: str = Form("")):
-    require_admin(request)
+    admin = require_admin(request)
     target_username = target_username.strip().lower()
     u = get_user_by_username(target_username)
     if not u:
         return templates.TemplateResponse(
-            "admin_dashboard.html",
+            "admin_credit.html",
             {
                 "request": request,
-                "admin": require_admin(request),
-                "withdrawals": list_all_withdrawals(),
+                "admin": admin,
                 "error": "User not found",
                 "success": None,
             },
@@ -1300,11 +1326,10 @@ def admin_add_credit(request: Request, target_username: str = Form(...), amount:
     amount = int(amount)
     if amount <= 0:
         return templates.TemplateResponse(
-            "admin_dashboard.html",
+            "admin_credit.html",
             {
                 "request": request,
-                "admin": require_admin(request),
-                "withdrawals": list_all_withdrawals(),
+                "admin": admin,
                 "error": "Amount must be > 0",
                 "success": None,
             },
@@ -1318,14 +1343,23 @@ def admin_add_credit(request: Request, target_username: str = Form(...), amount:
     with_write_tx(_tx)
 
     return templates.TemplateResponse(
-        "admin_dashboard.html",
+        "admin_credit.html",
         {
             "request": request,
-            "admin": require_admin(request),
-            "withdrawals": list_all_withdrawals(),
+            "admin": admin,
             "error": None,
             "success": f"Credited {amount} to {target_username}",
         },
+    )
+
+
+@app.get("/admin/withdrawals", response_class=HTMLResponse)
+def admin_withdrawals_page(request: Request):
+    admin = require_admin(request)
+    w_all = list_all_withdrawals(status=None)
+    return templates.TemplateResponse(
+        "admin_withdrawals.html",
+        {"request": request, "admin": admin, "withdrawals": w_all, "error": None, "success": None},
     )
 
 
@@ -1333,14 +1367,14 @@ def admin_add_credit(request: Request, target_username: str = Form(...), amount:
 def admin_confirm_withdrawal_web(request: Request, withdrawal_id: str = Form(...), txid: str = Form(""), note: str = Form("")):
     require_admin(request)
     admin_confirm_withdraw(withdrawal_id=withdrawal_id, txid=txid, note=note)
-    return RedirectResponse(url="/admin", status_code=302)
+    return RedirectResponse(url="/admin/withdrawals", status_code=302)
 
 
 @app.post("/admin/withdrawals/reject")
 def admin_reject_withdrawal_web(request: Request, withdrawal_id: str = Form(...), note: str = Form("")):
     require_admin(request)
     admin_reject_withdraw(withdrawal_id=withdrawal_id, note=note)
-    return RedirectResponse(url="/admin", status_code=302)
+    return RedirectResponse(url="/admin/withdrawals", status_code=302)
 
 
 # =========================
